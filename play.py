@@ -15,7 +15,7 @@ except ImportError:
         return None
 from state_finder import get_state
 from utils import load_toml_as_dict, count_hsv_pixels, load_brawlers_info, interpret_pyla_code, \
-    count_mask_pixels, JOYSTICK_RADIUS, clamp, config_bool
+    count_mask_pixels, JOYSTICK_RADIUS, clamp, config_bool, is_safe_ast
 
 
 brawl_stars_width, brawl_stars_height = 1920, 1080
@@ -100,7 +100,15 @@ class Play:
         self.entity_detection_confidence = bot_config["entity_detection_confidence"]
         self.seconds_to_hold_attack_after_reaching_max = load_toml_as_dict("cfg/bot_config.toml")["seconds_to_hold_attack_after_reaching_max"]
         self.persistent_data = {"time_since_holding_attack": None}
-        self.pyla_code = pyla_code
+        if isinstance(pyla_code, str):
+            is_safe, error_msg = is_safe_ast(pyla_code)
+            if not is_safe:
+                print(f"Security/Syntax Validation Failed for playstyle: {error_msg}")
+                self.pyla_code = compile("", "<string>", "exec")
+            else:
+                self.pyla_code = compile(pyla_code, "<pyla_script>", "exec")
+        else:
+            self.pyla_code = pyla_code
         self.context = None
         self.frame = None
 

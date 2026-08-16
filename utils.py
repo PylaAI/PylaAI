@@ -686,12 +686,49 @@ SAFE_GLOBALS = {
 }
 
 
+import ast
+
+def is_safe_ast(code_str):
+    try:
+        tree = ast.parse(code_str)
+    except SyntaxError as e:
+        return False, f"Syntax Error: {e}"
+
+    for node in ast.walk(tree):
+        # 1. Block access to any attributes starting with underscore (e.g. __class__)
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith('_'):
+                return False, f"Access to private/dunder attribute '{node.attr}' is forbidden."
+        
+        # 2. Block imports of any kind inside the script
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return False, "Imports are not allowed in playstyle scripts."
+            
+        # 3. Block calling of eval, exec, compile, etc.
+        if isinstance(node, ast.Name):
+            if node.id in {'exec', 'eval', 'compile', 'getattr', 'setattr', 'delattr', '__import__'}:
+                return False, f"Call to '{node.id}' is forbidden."
+
+    return True, None
+
+
 def interpret_pyla_code(pyla_code, context):
     safe_globals = SAFE_GLOBALS.copy()
     safe_globals.update(context)
+    safe_globals['__builtins__'] = {}
 
     try:
-        exec(pyla_code, safe_globals)
+        if isinstance(pyla_code, str):
+            is_safe, error_msg = is_safe_ast(pyla_code)
+            if not is_safe:
+                print(f"Security/Syntax Validation Failed for playstyle: {error_msg}")
+                return None, safe_globals
+            compiled_code = compile(pyla_code, '<string>', 'exec')
+        else:
+            compiled_code = pyla_code
+
+        if compiled_code is not None:
+            exec(compiled_code, safe_globals)
     except Exception as e:
         print(f"Error executing .pyla code")
         traceback.print_exc()

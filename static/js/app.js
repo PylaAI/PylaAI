@@ -1776,6 +1776,9 @@ function bindPlaystyleEvents() {
     });
 
     document.getElementById("importPlaystyleBtn")?.addEventListener("click", () => {
+        if (!window.confirm("WARNING: Importing custom playstyles carries security risks.\nPlaystyle files (.pyla) contain Python code that runs directly on your system.\nOnly import playstyles from authors you completely trust.\n\nDo you want to proceed?")) {
+            return;
+        }
         document.getElementById("playstyleFileInput")?.click();
     });
 

@@ -1,19 +1,15 @@
 # PylaAI
 
-PylaAI is currently the best external Brawl Stars bot. This repository is intended for developers.
+[![CC BY-NC 4.0 License](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/pylaai)
+[![Trello](https://img.shields.io/badge/Trello-0079BF?logo=trello&logoColor=white)](https://trello.com/b/SAz9J6AA/public-pyla-trello)
 
-> ⚠️ **Warning:** This repository contains the **source code**.  
-> If you are not a developer, it is recommended to use the **official compiled build** from our Discord (linked below), which comes as a ready-to-use `.exe`.
+> [!WARNING]
+> **Warning**: There are two versions of PylaAI, you are currently browsing the source code for developers. Please visit our [Discord](https://discord.gg/pylaai) to use the compiled version, which comes as a ready-to-use `.exe`.
 
----
+PylaAI is currently the best external Brawl Stars bot.
 
-# Supported Platforms
-- **Windows 10/11**
-
-## Hardware Support
-
-
-### Supported Hardware
+## Requirements
 
 - **NVIDIA GPUs**
   - Automatically installs compatible **CUDA + PyTorch**
@@ -26,99 +22,45 @@ PylaAI is currently the best external Brawl Stars bot. This repository is intend
   - Uses **DirectML** acceleration on Windows
   - Works well with integrated graphics
 
-- **Linux / WSL**
-  - Fully optimized for **Ubuntu / WSLg environments**
+## Installation
 
----
+You will need [Python 3.11.9](https://www.python.org/downloads/release/python-3119/).
 
-## 🚀 Installation & Running
+### Windows
 
-### Install Python
-
-PylaAI has been tested with:
-
-```bash
-Python 3.11.9
-```
-
-Download Python:
-
-```
-[Python 3.11](https://www.python.org/downloads/release/python-3119/)
-```
-
----
-
-###Run Universal Setup
-
-run the smart installer:
-
-```bash
+```sh
 python setup.py install
 ```
 
-### Start Your Emulator
+### Other Platforms
 
-see how you can start your emulator in https://pyla-ai.pages.dev/#starting
+The official PylaAI does **NOT** support other platforms such as Linux or Mac, but you can visit [Unofficial Ports](https://github.com/4D1-TooFarGone/Pyla-Ports) for cross-platform support.
 
----
+## Using PylaAI
 
-### Launch PylaAI
+> [!NOTE]
+> **Note**: This open-source version runs in localhost mode. The cloud features have been disabled by default.
 
 Run the bot:
 
-```bash
+```sh
 python main.py
 ```
 
----
 
+## License
 
-### Localhost Mode
+This project is **not permitted to be sold or monetized** under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
-This open-source version runs in **localhost mode**.
+## Maintainer
 
-The following cloud features are disabled by default:
-
-- Login system
-- Cloud statistics
-- Auto updates
-- Remote API services
-
----
-
-### Running Tests
-
-To make sure changes do not introduce regressions:
-
-```bash
-python -m unittest discover
-```
-
----
-
-## 📌 Project Links
-
-- **[Discord](https://discord.gg/xUusk3fw4A)** Join the Pyla Server
-- **{Trello](https://trello.com/b/SAz9J6AA/public-pyla-trello)**
-
----
-
-## ⚖️ License
-
-Please respect the **"No Selling" license** out of respect for the work of the official developers.
-
-This project is **not permitted to be sold or monetized**.
-
----
-
-## 👨‍💻 People that have been Official Developers
+### Developers
 
 - **ivanyordanovgt**
 - **AngelFireLA**
 - **awarzu**
 
-## Contributors
+### Contributors
 
 - **Maayan080**
 - **simonrejzek**
