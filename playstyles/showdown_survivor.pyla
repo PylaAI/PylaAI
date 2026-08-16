@@ -5,8 +5,8 @@ def no_enemy_movement():
 
     if not closest_teammate_coords:
         # Calculate vector to the center of the screen
-        center_x = width / 2
-        center_y = height / 2
+        center_x = 1920*width_ratio / 2
+        center_y = 1080*height_ratio / 2
 
         dx = center_x - player_pos[0]
         dy = center_y - player_pos[1]
@@ -21,8 +21,7 @@ def no_enemy_movement():
             dist_to_center = math.hypot(dx, dy)
 
         if dist_to_center > 0:
-            direction_x = (dx / dist_to_center) * JOYSTICK_RADIUS
-            direction_y = (dy / dist_to_center) * JOYSTICK_RADIUS
+            direction_x, direction_y = dx, dy
         else:
             direction_x, direction_y = 0.0, 0.0
 
@@ -42,8 +41,7 @@ def no_enemy_movement():
     dx = closest_teammate_coords[0] - player_pos[0]
     dy = closest_teammate_coords[1] - player_pos[1]
 
-    direction_x = (dx / dist) * JOYSTICK_RADIUS
-    direction_y = (dy / dist) * JOYSTICK_RADIUS
+    direction_x, direction_y = dx, dy
     movement_options = [(direction_x, direction_y), (direction_x, 0), (0, direction_y)]
 
     for move in movement_options:

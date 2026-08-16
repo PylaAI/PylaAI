@@ -10,6 +10,7 @@ idle_pixels_minimum = 75000.0
 centered_wall_detection = false
 wall_detection_confidence = 0.5
 entity_detection_confidence = 0.65
+state_detection_confidence = 0.75
 seconds_to_hold_attack_after_reaching_max = 1.5
 play_again_on_win = "no"
 current_playstyle = "universal_smart_v5_Slarckvul_Eddition.pyla"

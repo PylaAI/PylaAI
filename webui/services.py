@@ -25,6 +25,7 @@ from utils import (
     normalize_brawler_filename,
     resolve_project_path,
     save_dict_as_toml, PYLA_VERSION, api_update_brawler_data, clear_brawler_data, save_brawler_data,
+    mask_secret,
 )
 
 try:
@@ -86,6 +87,7 @@ logger = logging.getLogger(__name__)
 
 class WebDataService:
     PLAY_ORDER_VALUES = {"in_order", "lowest_to_highest", "highest_to_lowest"}
+    SECRET_WEBHOOK_FIELDS = {"webhook_url", "discord_bot_token", "telegram_token"}
 
     GENERAL_FIELDS: dict[str, tuple[str, Any]] = {
         "run_for_minutes": ("int", 0),
@@ -120,6 +122,7 @@ class WebDataService:
         "centered_wall_detection": ("bool", False),
         "wall_detection_confidence": ("float", 0.6),
         "entity_detection_confidence": ("float", 0.6),
+        "state_detection_confidence": ("float", 0.75),
         "seconds_to_hold_attack_after_reaching_max": ("float", 1.5),
         "idle_pixels_minimum": ("float", 75000.0),
         "super_pixels_minimum": ("float", 1800.0),
@@ -193,9 +196,16 @@ class WebDataService:
             selected[key] = self._deserialize(value_type, raw_value)
         return selected
 
-    def _apply_updates(self, config: dict[str, Any], schema: dict[str, tuple[str, Any]], updates: dict[str, Any]) -> dict[str, Any]:
+    def _apply_updates(self, config: dict[str, Any], schema: dict[str, tuple[str, Any]], updates: dict[str, Any], allow_secret_clear: bool = False) -> dict[str, Any]:
         for key, value in updates.items():
             if key not in schema:
+                continue
+            if (
+                key in self.SECRET_WEBHOOK_FIELDS
+                and not allow_secret_clear
+                and isinstance(value, str)
+                and not value.strip()
+            ):
                 continue
             value_type, _default = schema[key]
             parsed = self._deserialize(value_type, value)
@@ -708,7 +718,14 @@ class WebDataService:
             return self._select_fields(self._normalize_debug_settings(self._load_config("cfg/debug_settings.toml")), self.DEBUG_FIELDS)
         if section == "webhook":
             config = self._load_config("cfg/webhook_config.toml")
-            return self._select_fields(config, self.WEBHOOK_FIELDS)
+            payload = self._select_fields(config, self.WEBHOOK_FIELDS)
+            payload["_secret_status"] = {
+                key: mask_secret(payload.get(key))
+                for key in self.SECRET_WEBHOOK_FIELDS
+            }
+            for key in self.SECRET_WEBHOOK_FIELDS:
+                payload[key] = ""
+            return payload
         raise KeyError(f"Unknown settings section: {section}")
 
     def update_settings(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:

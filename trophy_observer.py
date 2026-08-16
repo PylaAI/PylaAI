@@ -1,4 +1,6 @@
 import os
+import secrets
+import time
 import requests
 from utils import load_toml_as_dict, save_dict_as_toml, api_base_url, hash_playstyle, PYLA_VERSION, resolve_project_path
 import pandas as pd
@@ -28,6 +30,28 @@ class ParsedGameResult:
 
 
 class TrophyObserver:
+
+    @staticmethod
+    def _replace_when_available(source, destination):
+        """Replace destination once Windows releases any external file lock."""
+        retry_delay = 0.1
+        waiting = False
+
+        while True:
+            try:
+                os.replace(source, destination)
+                if waiting:
+                    print(f"File lock released; saved {destination.name}.")
+                return
+            except PermissionError as error:
+                if not waiting:
+                    print(
+                        f"Waiting for {destination.name} to become writable "
+                        f"({error})..."
+                    )
+                    waiting = True
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 2.0)
 
     def __init__(self):
         self.history_file = resolve_project_path("cfg", "match_history.csv")
@@ -93,7 +117,20 @@ class TrophyObserver:
         return history
 
     def save_history(self):
-        self.match_history.to_csv(self.history_file, index=False)
+        self.history_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.history_file.with_name(
+            f".{self.history_file.name}.{secrets.token_hex(8)}.tmp"
+        )
+        try:
+            self.match_history.to_csv(temporary, index=False)
+            with open(temporary, "r+b") as handle:
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._replace_when_available(temporary, self.history_file)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
 
     def parse_game_result(self, raw_result: str) -> ParsedGameResult:
         """Parses raw game result string into a structured data class."""

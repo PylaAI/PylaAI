@@ -24,7 +24,9 @@ region_data = load_toml_as_dict("./cfg/lobby_config.toml")['template_matching']
 match_result_crop_region = region_data['match_result']
 
 
-def is_template_in_region(image, template_path, region, threshold=0.75):
+def is_template_in_region(image, template_path, region, threshold=None):
+    if threshold is None:
+        threshold = load_toml_as_dict("cfg/bot_config.toml").get("state_detection_confidence", 0.75)
     current_height, current_width = image.shape[:2]
     orig_x, orig_y, orig_width, orig_height = region
     width_ratio, height_ratio = current_width / orig_screen_width, current_height / orig_screen_height
@@ -167,7 +169,7 @@ def is_in_prestige_milestone(image):
     return is_template_in_region(image, states_path + "prestige_continue.png", region_data['prestige_continue'])
 
 def is_in_nano_noodles(image):
-    return is_template_in_region(image, states_path + "nano_noodles.png", region_data['nano_noodles'])
+    return is_template_in_region(image, states_path + "nano_noodles.png", region_data['nano_noodles']) or is_template_in_region(image, states_path + "nano_noodles_2.png", region_data['nano_noodles'])
 
 
 def is_in_star_drop(image):

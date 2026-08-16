@@ -44,6 +44,13 @@ class _SupressHistoryPolling(logging.Filter):
             and ' 200 -' in message
         )
 
+class _SuppressWebhookPutting(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not (
+            'PUT /api/webhook ' in message
+        )
+
 def _configure_request_logging():
     werkzeug_logger = logging.getLogger("werkzeug")
     if not any(isinstance(log_filter, _SuppressRuntimeStatusPolling) for log_filter in werkzeug_logger.filters):
@@ -54,6 +61,9 @@ def _configure_request_logging():
         werkzeug_logger.addFilter(_SuppressAssetsGetting())
     if not any(isinstance(log_filter, _SupressHistoryPolling) for log_filter in werkzeug_logger.filters):
         werkzeug_logger.addFilter(_SupressHistoryPolling())
+    if not any(isinstance(log_filter, _SuppressWebhookPutting) for log_filter in werkzeug_logger.filters):
+        werkzeug_logger.addFilter(_SuppressWebhookPutting())
+
 
 
 def _start_discord_bot_thread(app: Flask):

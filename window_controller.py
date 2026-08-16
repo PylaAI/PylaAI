@@ -1,5 +1,6 @@
 import atexit
 import math
+import random
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
@@ -41,12 +42,35 @@ def online_devices():
 
 
 def discover_device(verbose: bool = False) -> AdbDevice:
-    preferred_port = load_toml_as_dict("cfg/general_config.toml")["emulator_port"]
-    candidates = [5137, 5555, 16384, 7555, 5635, 62001, 62025, 62026, 7556, 7565, 16416] + list(range(5556, 5566)) + list(range(5565, 5756, 10))
+    preferred_port = load_toml_as_dict("cfg/general_config.toml").get("emulator_port")
 
     def _safe_connect(port: int):
         dev = adb.connect(f"127.0.0.1:{port}")
         return dev
+
+    if preferred_port:
+        try:
+            port_str = str(preferred_port).strip()
+            if port_str.isdigit():
+                port_num = int(port_str)
+                if verbose:
+                    print(f"Attempting connection to configured preferred port: {port_num}")
+                try:
+                    _safe_connect(port_num)
+                except Exception:
+                    pass
+
+                devices = online_devices()
+                pref = next((d for d in devices if d.serial.endswith(f"{port_str}")), None)
+                if pref:
+                    if verbose:
+                        print(f"Successfully connected to configured preferred port: {pref.serial}")
+                    return pref
+        except Exception as e:
+            if verbose:
+                print(f"Warning: Error handling preferred port connection: {e}")
+
+    candidates = [5137, 5555, 16384, 7555, 5635, 62001, 62025, 62026, 7556, 7565, 16416] + list(range(5556, 5566)) + list(range(5565, 5756, 10)) + list(range(16385, 16415))
 
     def _try(port):
         try:
@@ -64,13 +88,6 @@ def discover_device(verbose: bool = False) -> AdbDevice:
     if not devices:
         raise ConnectionError("No ADB devices came online after scan.")
 
-    if preferred_port:
-        pref = next((d for d in devices if d.serial.endswith(f"{preferred_port}")), None)
-        if pref:
-            if verbose and len(devices) > 1:
-                print(f"Multiple devices online; using configured port {preferred_port} ({pref.serial})")
-            return pref
-
     if len(devices) == 1:
         return devices[0]
 
@@ -87,7 +104,8 @@ class WindowController:
         self.height = None
         self.width_ratio = None
         self.height_ratio = None
-        self.joystick_x, self.joystick_y = None, None
+        self.movement_joystick_x, self.movement_joystick_y = None, None
+        self.original_movement_joystick = (None, None)
         self.BRAWL_STARS_PACKAGE = load_toml_as_dict("cfg/general_config.toml")["brawl_stars_package"]
         self.verbose_debug = config_bool(
             load_toml_as_dict("cfg/debug_settings.toml").get("verbose_debug"),
@@ -255,9 +273,22 @@ class WindowController:
                 print(f"WARNING: Unexpected resolution: {self.width}x{self.height}. Expected {brawl_stars_width}x{brawl_stars_height}. Please set your emulator resolution to 1920x1080 for best results.")
             self.width_ratio = self.width / brawl_stars_width
             self.height_ratio = self.height / brawl_stars_height
-            self.joystick_x, self.joystick_y = 220 * self.width_ratio, 870 * self.height_ratio
+            movement_joystick = press_coords_dict.get("movement_joystick", [180, 900])
+            self.movement_joystick_x, self.movement_joystick_y = movement_joystick[0] * self.width_ratio, movement_joystick[1] * self.height_ratio
+            self.original_movement_joystick = (self.movement_joystick_x, self.movement_joystick_y)
             self.scale_factor = min(self.width_ratio, self.height_ratio)
         return frame
+
+    def reset_to_default_resolution(self):
+        print("Resetting window controller dimensions to 1920x1080 and updating scale ratios...")
+        self.width = brawl_stars_width
+        self.height = brawl_stars_height
+        self.width_ratio = self.width / brawl_stars_width
+        self.height_ratio = self.height / brawl_stars_height
+        movement_joystick = press_coords_dict.get("movement_joystick", [180, 900])
+        self.movement_joystick_x, self.movement_joystick_y = movement_joystick[0] * self.width_ratio, movement_joystick[1] * self.height_ratio
+        self.original_movement_joystick = (self.movement_joystick_x, self.movement_joystick_y)
+        self.scale_factor = min(self.width_ratio, self.height_ratio)
 
     def touch_down(self, x, y, pointer_id=0):
         try:
@@ -293,10 +324,18 @@ class WindowController:
                     print(f"Retry after reconnect failed during touch_up at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
 
     def move(self, x, y):
-        target_x = self.joystick_x + x
-        target_y = self.joystick_y + y
         if not self.are_we_moving:
-            self.touch_down(self.joystick_x, self.joystick_y, pointer_id=self.PID_JOYSTICK)
+            if self.original_movement_joystick[0] is not None:
+                self.movement_joystick_x = self.original_movement_joystick[0] + random.randint(-5, 5) * self.width_ratio
+                self.movement_joystick_y = self.original_movement_joystick[1] + random.randint(-5, 5) * self.height_ratio
+            else:
+                self.movement_joystick_x = 180 * self.width_ratio + random.randint(-5, 5) * self.width_ratio
+                self.movement_joystick_y = 900 * self.height_ratio + random.randint(-5, 5) * self.height_ratio
+        target_x = self.movement_joystick_x + x
+        target_y = self.movement_joystick_y + y
+        if not self.are_we_moving:
+            self.touch_down(self.movement_joystick_x, self.movement_joystick_y, pointer_id=self.PID_JOYSTICK)
+            time.sleep(0.05)
             self.touch_move(target_x, target_y, pointer_id=self.PID_JOYSTICK)
             self.are_we_moving = True
             self.last_joystick_pos = (target_x, target_y)
@@ -310,7 +349,7 @@ class WindowController:
 
     def release_movement(self):
         if self.are_we_moving:
-            self.touch_up(self.joystick_x, self.joystick_y, pointer_id=self.PID_JOYSTICK)
+            self.touch_up(self.movement_joystick_x, self.movement_joystick_y, pointer_id=self.PID_JOYSTICK)
             self.are_we_moving = False
             self.last_joystick_pos = (None, None)
 

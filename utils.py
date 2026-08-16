@@ -143,10 +143,22 @@ api_base_url = cfg_api_base_url if cfg_api_base_url != "default" else default_ap
 brawlers_info_file_path = PROJECT_ROOT / "cfg" / "brawlers_info.json"
 
 
-def count_hsv_pixels(cv_image, low_hsv, high_hsv):
-    hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2HSV)
-    mask = cv2.inRange(hsv_image, low_hsv, high_hsv)
-    return cv2.countNonZero(mask)
+def count_hsv_pixels(cv_image, low_hsv, high_hsv, window_controller=None):
+    try:
+        hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2HSV)
+        mask = cv2.inRange(hsv_image, low_hsv, high_hsv)
+        return cv2.countNonZero(mask)
+    except cv2.error as e:
+        print(f"[ERROR CATCHING] OpenCV error occurred in count_hsv_pixels: {e}")
+        if cv_image is not None:
+            print(f"Crop image dimensions (width x height): {cv_image.shape[1]}x{cv_image.shape[0]}")
+        else:
+            print("Crop image is None")
+        if window_controller is not None:
+            print(f"WindowController state: width={window_controller.width}, height={window_controller.height}, width_ratio={window_controller.width_ratio}, height_ratio={window_controller.height_ratio}")
+            window_controller.reset_to_default_resolution()
+        return 0
+
 
 
 def count_mask_pixels(mask, x1, y1, x2, y2):
@@ -314,12 +326,15 @@ def get_brawler_list():
         brawler_list = list(load_brawlers_info().keys())
         return brawler_list
     url = f'https://{api_base_url}/get_brawler_list'
-    response = requests.post(url)
-    if response.status_code == 201:
-        data = response.json()
-        return list(set(data.get('brawlers', []) + list(load_brawlers_info().keys())))
-    else:
-        return []
+    try:
+        response = requests.post(url, timeout=3.0)
+        if response.status_code == 201:
+            data = response.json()
+            return list(set(data.get('brawlers', []) + list(load_brawlers_info().keys())))
+    except Exception:
+        pass
+    return list(load_brawlers_info().keys())
+
 
 
 def update_missing_brawlers_info(brawlers):
@@ -380,7 +395,7 @@ def save_brawler_icon(brawler_name):
     print(f"Icon not found for brawler '{brawler_name}'")
 
 
-PYLA_VERSION = "0.8.14"
+PYLA_VERSION = "0.8.15"
 
 
 def get_latest_version():
@@ -667,6 +682,7 @@ def get_dpi_scale():
 
 SAFE_GLOBALS = {
     'math': math,
+    'PI': math.pi,
     'random': random,
     'abs': abs,
     'min': min,
@@ -683,7 +699,12 @@ SAFE_GLOBALS = {
     'print': print,
     'time_now': lambda: time.time(),
     'random_int': random.randint,
+    'normalize_move': lambda x, y, radius=100: (
+        (x * (radius / math.hypot(x, y)), y * (radius / math.hypot(x, y)))
+        if math.hypot(x, y) > 0 else (0.0, 0.0)
+    ),
 }
+
 
 
 import ast
@@ -796,5 +817,24 @@ def clamp(x: int, low: int, high: int) -> int:
         return high
     return x
 
-JOYSTICK_RADIUS = 75
+JOYSTICK_RADIUS = 100
+
+
+def normalize_move(x, y, radius=JOYSTICK_RADIUS):
+    length = math.hypot(x, y)
+    if length <= 0:
+        return (0.0, 0.0)
+    scale = radius / length
+    return (x * scale, y * scale)
+
+
+def mask_secret(value: str | None) -> dict:
+    value = (value or "").strip()
+    if not value:
+        return {"configured": False, "length": 0, "masked": ""}
+    return {
+        "configured": True,
+        "length": len(value),
+        "masked": "*" * len(value),
+    }
 

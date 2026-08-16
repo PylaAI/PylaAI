@@ -1,3 +1,5 @@
+import asyncio
+import time
 from io import BytesIO
 
 from discord import app_commands
@@ -12,6 +14,9 @@ except ImportError:
     early_access = False
     def register_early_access_commands(a):
         pass
+
+
+TIMEOUT = 300
 
 
 class DiscordBot:
@@ -68,30 +73,18 @@ class DiscordBot:
         return discord.Object(id=guild_id)
 
     async def require_authorized_user(self, interaction: discord.Interaction) -> bool:
-        authorized_user_id = self.get_authorized_user_id()
-        if authorized_user_id is None:
-            await interaction.response.send_message(
-                "Discord remote control is disabled because discord_id is not configured.",
-                ephemeral=True
-            )
-            return False
+        authorized_id = self.get_authorized_user_id()
+        if authorized_id is None:
+            return True
 
-        if interaction.user.id != authorized_user_id:
-            await interaction.response.send_message(
-                "You are not authorized to control this Pyla instance.",
-                ephemeral=True
-            )
-            return False
+        if interaction.user.id == authorized_id:
+            return True
 
-        configured_guild_id = self.get_configured_guild_id()
-        if configured_guild_id and interaction.guild_id and interaction.guild_id != configured_guild_id:
-            await interaction.response.send_message(
-                "This Pyla instance is not configured for this Discord server.",
-                ephemeral=True
-            )
-            return False
-
-        return True
+        await interaction.response.send_message(
+            "You are not authorized to use this command.",
+            ephemeral=True
+        )
+        return False
 
     async def sync_commands(self):
         guild = self.get_configured_guild()
@@ -106,8 +99,20 @@ class DiscordBot:
     def register_events(self):
         @self.client.event
         async def on_ready():
-            print(f"Discord bot {self.client.user.name} is ready !")
-            await self.sync_commands()
+            print(f"Discord bot logged in as {self.client.user}")
+            if self.commands_synced:
+                return
+
+            configured_guild_id = self.get_configured_guild_id()
+            if configured_guild_id:
+                guild = discord.Object(id=configured_guild_id)
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                print(f"Discord slash commands synced to guild {configured_guild_id}.")
+            else:
+                await self.tree.sync()
+                print("Discord slash commands synced globally.")
+            self.commands_synced = True
 
     def register_commands(self):
         @self.tree.command(
@@ -144,7 +149,7 @@ class DiscordBot:
 
         @self.tree.command(
             name="stop",
-            description="Makes the bot stop once it reaches the lobby",
+            description="Stops the bot once it finishes its current task",
         )
         async def stop(interaction: discord.Interaction):
             if not await self.require_authorized_user(interaction):
@@ -181,6 +186,25 @@ class DiscordBot:
                     f"{('Success' if stop.get('ok') else 'Failed')} ! {stop.get('message', '')}",
                     ephemeral=True
                 )
+
+                start_time = time.time()
+                while time.time() - start_time < TIMEOUT:
+                    status = self.runtime_manager.get_status()
+                    if status.get("state") == "idle":
+                        user_id = self.get_authorized_user_id()
+                        await interaction.followup.send(
+                            f"{('' if user_id is None else f'<@{user_id}> ')}The bot has stopped.",
+                            ephemeral=True
+                        )
+                        return
+                    elif status.get("state") != "stopping":
+                        user_id = self.get_authorized_user_id()
+                        await interaction.followup.send(
+                            f"{('' if user_id is None else f'<@{user_id}> ')}The bot has unexpectedly stopped stopping. Current state: {status.get('state')}.",
+                            ephemeral=True
+                        )
+                        return
+                    await asyncio.sleep(1)
 
         @self.tree.command(
             name="pause",
@@ -227,6 +251,26 @@ class DiscordBot:
                     f"{('Success' if pause.get('ok') else 'Failed')} ! {pause.get('message', '')}",
                     ephemeral=True
                 )
+
+                start_time = time.time()
+                while time.time() - start_time < TIMEOUT:
+                    status = self.runtime_manager.get_status()
+                    if status.get("state") == "paused":
+                        user_id = self.get_authorized_user_id()
+                        await interaction.followup.send(
+                            f"{('' if user_id is None else f'<@{user_id}> ')}The bot is now paused.",
+                            ephemeral=True
+                        )
+                        return
+                    elif status.get("state") != "pausing":
+                        user_id = self.get_authorized_user_id()
+                        await interaction.followup.send(
+                            f"{('' if user_id is None else f'<@{user_id}> ')}The bot has unexpectedly stopped pausing. Current state: {status.get('state')}.",
+                            ephemeral=True
+                        )
+                        return
+                    await asyncio.sleep(1)
+
 
         @self.tree.command(
             name="start",

@@ -257,7 +257,7 @@ class StageManager:
             if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop():
                 self.window_controller.press("play_again")
                 button_pressed = True
-            else:
+            elif not button_pressed:
                 print("Game has ended, proceeding")
                 self.window_controller.press("proceed")
 
@@ -268,8 +268,10 @@ class StageManager:
         if self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause():
             print("Waiting for match to start...")
             start_wait_time = time.time()
+            interrupted = False
             while time.time() - start_wait_time < 25:
                 if self._should_stop() or self._should_pause():
+                    interrupted = True
                     break
                 screenshot = self.window_controller.screenshot()
                 current_state = get_state(screenshot)
@@ -277,8 +279,12 @@ class StageManager:
                     print("Match started successfully!")
                     return
                 if self._sleep_interruptible(0.5):
+                    interrupted = True
                     break
 
+            if interrupted:
+                print("Play-again wait interrupted by stop or pause; skipping game restart.")
+                return
             print("Match did not start within 25s, restarting the game.")
             self.window_controller.restart_brawl_stars()
             time.sleep(2)

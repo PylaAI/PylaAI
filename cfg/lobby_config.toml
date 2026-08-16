@@ -15,4 +15,7 @@ match_result = [20, 10, 650, 200]
 super=[1460, 830, 1560, 930]
 gadget=[1580, 930, 1700, 1050]
 hypercharge=[1350, 940, 1450, 1050]
+[hsv_bounds]
+idle_reconnect_high_bounds = [[10, 22, 42], [10, 22, 90], [118, 66, 46]]
+
 

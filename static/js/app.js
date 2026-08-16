@@ -101,6 +101,8 @@ const state = {
     playerTagLoading: false,
     runtimePollTimer: null,
     authSubmitting: false,
+    expandedPlaystyleDescriptions: new Set(),
+    playstyleScrollbarCleanup: null,
 };
 
 const SETTINGS_META = {
@@ -134,6 +136,7 @@ const SETTINGS_META = {
         { key: "centered_wall_detection", label: "Centered Wall Detection", type: "checkbox", help: "Use the close wall model on a 640x640 crop centered near the player." },
         { key: "wall_detection_confidence", label: "Wall Confidence", type: "number", step: "0.05", help: "Confidence threshold for wall detection." },
         { key: "entity_detection_confidence", label: "Entity Confidence", type: "number", step: "0.05", help: "Confidence threshold for player and enemy detections." },
+        { key: "state_detection_confidence", label: "State Confidence", type: "number", step: "0.05", help: "Confidence threshold used when matching UI templates and game states." },
         { key: "seconds_to_hold_attack_after_reaching_max", label: "Post-Max Hold Attack", type: "number", step: "0.1", help: "Extra hold time after maxing hold-attack brawlers." },
         { key: "idle_pixels_minimum", label: "Idle Pixel Threshold", type: "number", help: "Amount of gray needed to consider the game idle." },
         { key: "super_pixels_minimum", label: "Super Pixels", type: "number", help: "Yellow pixel threshold for super readiness." },
@@ -152,14 +155,14 @@ const SETTINGS_META = {
     ],
     webhook: [
         { key: "discord_id", label: "Discord ID", type: "text", help: "Your discord user ID. Required to use a discord bot or be pinged in webhooks." },
-        { key: "webhook_url", label: "Webhook URL", type: "url", help: "Discord webhook endpoint used for notifications." },
-        { key: "discord_bot_token", label: "Discord Bot Token", type: "password", help: "Discord bot token used for remote control commands. Requires full restart to apply." },
+        { key: "webhook_url", label: "Webhook URL", type: "url", secret: true, help: "Discord webhook endpoint used for notifications." },
+        { key: "discord_bot_token", label: "Discord Bot Token", type: "password", secret: true, help: "Discord bot token used for remote control commands. Requires full restart to apply." },
         { key: "ping_when_stuck", label: "Ping When Stuck", type: "checkbox", help: "Send a ping when Pyla gets stuck." },
         { key: "ping_when_target_is_reached", label: "Ping On Target", type: "checkbox", help: "Send a ping when a target finishes." },
         { key: "ping_every_x_match", label: "Ping Every X Matches", type: "number", help: "0 disables periodic match pings." },
         { key: "ping_every_x_minutes", label: "Ping Every X Minutes", type: "number", help: "0 disables periodic minute pings." },
         { key: "discord_guild_id", label: "Discord Guild ID", type: "text", help: "Discord server ID where slash commands should be synced." },
-        { key: "telegram_token", label: "Telegram Bot Token", type: "password", help: "Telegram bot token used for notifications." },
+        { key: "telegram_token", label: "Telegram Bot Token", type: "password", secret: true, help: "Telegram bot token used for notifications." },
         { key: "telegram_chat_id", label: "Telegram Chat ID", type: "text", help: "Telegram chat ID that should receive notifications." },
     ],
 };
@@ -750,8 +753,13 @@ function renderPlaystyles() {
 
             <section class="ps-lib-wrap">
                 <p class="ps-lib-title">Library</p>
-                <div class="ps-library">
-                    ${renderPlaystyleLibrary(active)}
+                <div class="ps-library-shell">
+                    <div id="playstyleLibrary" class="ps-library">
+                        ${renderPlaystyleLibrary(active)}
+                    </div>
+                    <div id="playstyleLibraryScrollbar" class="app-scrollbar playstyle-library-scrollbar" role="scrollbar" aria-controls="playstyleLibrary" aria-orientation="vertical" aria-label="Scroll playstyle library" tabindex="0">
+                        <div id="playstyleLibraryScrollbarThumb" class="app-scrollbar-thumb"></div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -772,8 +780,9 @@ function renderPlaystyleLibrary(active = getActivePlaystyle()) {
 }
 
 function renderPlaystyleCard(item) {
+    const isExpanded = state.expandedPlaystyleDescriptions.has(item.filename);
     return `
-        <article class="ps-card" data-activate-playstyle="${escapeHtml(item.filename)}">
+        <article class="ps-card ${isExpanded ? "description-expanded" : ""}" data-activate-playstyle="${escapeHtml(item.filename)}">
             <button class="ps-delete-btn" data-delete-playstyle="${escapeHtml(item.filename)}" aria-label="Delete ${escapeHtml(item.name)}">&times;</button>
             ${renderPlaystyleShowcaseCard(item, false)}
         </article>
@@ -795,12 +804,24 @@ function renderPlaystyleShowcaseCard(playstyle, large = false) {
         `;
     }
 
+    const description = playstyle.description || "No description provided.";
+    const canExpandDescription = description.length > 110;
+    const descriptionExpanded = state.expandedPlaystyleDescriptions.has(playstyle.filename);
+
     return `
-        <div class="playstyle-showcase ${large ? "selected" : ""}">
+        <div class="playstyle-showcase ${large ? "selected" : ""} ${descriptionExpanded ? "description-expanded" : ""}">
             <div class="playstyle-showcase-head">
                 <h4>${escapeHtml(playstyle.name)}</h4>
                 <span>${escapeHtml(metaLine(playstyle))}</span>
-                <p class="playstyle-card-description">${escapeHtml(playstyle.description || "No description provided.")}</p>
+                <div class="playstyle-description-wrap">
+                    <p class="playstyle-card-description ${canExpandDescription ? "is-clamped" : ""} ${descriptionExpanded ? "is-expanded" : ""}">${escapeHtml(description)}</p>
+                    ${canExpandDescription ? `<p class="playstyle-description-hover" aria-hidden="true">${escapeHtml(description)}</p>` : ""}
+                </div>
+                ${canExpandDescription ? `
+                    <button class="playstyle-read-more" type="button" data-toggle-playstyle-description="${escapeHtml(playstyle.filename)}" aria-expanded="${descriptionExpanded}">
+                        ${descriptionExpanded ? "Read less" : "Read more"}
+                    </button>
+                ` : ""}
             </div>
             ${renderPlaystyleVisual(playstyle, large)}
         </div>
@@ -1331,6 +1352,10 @@ function renderSettingField(section, field, value) {
     }
 
     const isEarlyAccessLocked = !state.bootstrap?.auth?.early_access && field.key === "player_tag";
+    const secretStatus = state.bootstrap?.settings?.[section]?._secret_status?.[field.key];
+    const configuredSecretPlaceholder = field.secret && secretStatus?.configured
+        ? `Configured (${secretStatus.masked || "hidden"}) - enter a replacement`
+        : field.placeholder || "";
     return `
         <div class="setting-row ${isEarlyAccessLocked ? "setting-locked ea-locked-action" : ""}">
             <div class="setting-copy">
@@ -1341,7 +1366,7 @@ function renderSettingField(section, field, value) {
                 <p class="help-text">${escapeHtml(field.help)}</p>
             </div>
             <div class="setting-input-wrap ${field.suffix ? "has-suffix" : ""}">
-                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isEarlyAccessLocked ? "Locked - Early Access Only" : escapeHtml(field.placeholder || "")}" value="${isEarlyAccessLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isEarlyAccessLocked ? "readonly" : ""}>
+                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isEarlyAccessLocked ? "Locked - Early Access Only" : escapeHtml(configuredSecretPlaceholder)}" value="${isEarlyAccessLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isEarlyAccessLocked ? "readonly" : ""}>
                 ${field.suffix ? `<span class="input-suffix">${escapeHtml(field.suffix)}</span>` : ""}
             </div>
         </div>
@@ -1765,7 +1790,158 @@ async function persistQueueOrder(order) {
     }
 }
 
+function bindCustomScrollbar(scrollElementId, trackId, thumbId) {
+    const grid = document.getElementById(scrollElementId);
+    const track = document.getElementById(trackId);
+    const thumb = document.getElementById(thumbId);
+    if (!grid || !track || !thumb) return null;
+
+    let animationFrame = null;
+    let dragging = false;
+    let dragStartY = 0;
+    let dragStartScrollTop = 0;
+
+    const updateScrollbar = () => {
+        animationFrame = null;
+        const scrollRange = Math.max(0, grid.scrollHeight - grid.clientHeight);
+        const trackHeight = track.clientHeight;
+        const hasOverflow = scrollRange > 1 && trackHeight > 0;
+
+        track.classList.toggle("is-hidden", !hasOverflow);
+        track.setAttribute("aria-valuemin", "0");
+        track.setAttribute("aria-valuemax", String(Math.round(scrollRange)));
+        track.setAttribute("aria-valuenow", String(Math.round(grid.scrollTop)));
+        if (!hasOverflow) return;
+
+        const thumbHeight = Math.min(trackHeight, Math.max(48, Math.round(trackHeight * grid.clientHeight / grid.scrollHeight)));
+        const thumbTravel = Math.max(0, trackHeight - thumbHeight);
+        const thumbTop = scrollRange ? (grid.scrollTop / scrollRange) * thumbTravel : 0;
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.transform = `translate3d(0, ${thumbTop}px, 0)`;
+    };
+
+    const scheduleUpdate = () => {
+        if (animationFrame !== null) return;
+        animationFrame = requestAnimationFrame(updateScrollbar);
+    };
+
+    const handleThumbPointerDown = (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        dragging = true;
+        dragStartY = event.clientY;
+        dragStartScrollTop = grid.scrollTop;
+        thumb.classList.add("is-dragging");
+        thumb.setPointerCapture(event.pointerId);
+    };
+
+    const handleThumbPointerMove = (event) => {
+        if (!dragging) return;
+        event.preventDefault();
+        const scrollRange = Math.max(0, grid.scrollHeight - grid.clientHeight);
+        const thumbTravel = Math.max(0, track.clientHeight - thumb.offsetHeight);
+        if (!scrollRange || !thumbTravel) return;
+        grid.scrollTop = dragStartScrollTop + (event.clientY - dragStartY) * scrollRange / thumbTravel;
+    };
+
+    const finishThumbDrag = (event) => {
+        if (!dragging) return;
+        dragging = false;
+        thumb.classList.remove("is-dragging");
+        if (thumb.hasPointerCapture(event.pointerId)) {
+            thumb.releasePointerCapture(event.pointerId);
+        }
+    };
+
+    const handleTrackPointerDown = (event) => {
+        if (event.target === thumb || event.button !== 0) return;
+        event.preventDefault();
+        const scrollRange = Math.max(0, grid.scrollHeight - grid.clientHeight);
+        const trackRect = track.getBoundingClientRect();
+        const thumbTravel = Math.max(0, track.clientHeight - thumb.offsetHeight);
+        const requestedTop = Math.min(thumbTravel, Math.max(0, event.clientY - trackRect.top - thumb.offsetHeight / 2));
+        grid.scrollTop = thumbTravel ? requestedTop / thumbTravel * scrollRange : 0;
+    };
+
+    const handleTrackWheel = (event) => {
+        event.preventDefault();
+        grid.scrollTop += event.deltaY;
+    };
+
+    const handleTrackKeydown = (event) => {
+        const pageDistance = Math.max(80, grid.clientHeight * 0.85);
+        const keyActions = {
+            ArrowUp: () => { grid.scrollTop -= 48; },
+            ArrowDown: () => { grid.scrollTop += 48; },
+            PageUp: () => { grid.scrollTop -= pageDistance; },
+            PageDown: () => { grid.scrollTop += pageDistance; },
+            Home: () => { grid.scrollTop = 0; },
+            End: () => { grid.scrollTop = grid.scrollHeight; },
+        };
+        const action = keyActions[event.key];
+        if (!action) return;
+        event.preventDefault();
+        action();
+    };
+
+    grid.addEventListener("scroll", scheduleUpdate, { passive: true });
+    track.addEventListener("pointerdown", handleTrackPointerDown);
+    track.addEventListener("wheel", handleTrackWheel, { passive: false });
+    track.addEventListener("keydown", handleTrackKeydown);
+    thumb.addEventListener("pointerdown", handleThumbPointerDown);
+    thumb.addEventListener("pointermove", handleThumbPointerMove);
+    thumb.addEventListener("pointerup", finishThumbDrag);
+    thumb.addEventListener("pointercancel", finishThumbDrag);
+    window.addEventListener("resize", scheduleUpdate);
+
+    const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleUpdate) : null;
+    const observeScrollableSizes = () => {
+        if (!resizeObserver) return;
+        resizeObserver.disconnect();
+        resizeObserver.observe(grid);
+        resizeObserver.observe(track);
+        Array.from(grid.children).forEach((child) => resizeObserver.observe(child));
+    };
+    observeScrollableSizes();
+    const mutationObserver = typeof MutationObserver === "function"
+        ? new MutationObserver(() => {
+            observeScrollableSizes();
+            scheduleUpdate();
+        })
+        : null;
+    mutationObserver?.observe(grid, { childList: true });
+
+    const cleanup = () => {
+        if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+        resizeObserver?.disconnect();
+        mutationObserver?.disconnect();
+        grid.removeEventListener("scroll", scheduleUpdate);
+        track.removeEventListener("pointerdown", handleTrackPointerDown);
+        track.removeEventListener("wheel", handleTrackWheel);
+        track.removeEventListener("keydown", handleTrackKeydown);
+        thumb.removeEventListener("pointerdown", handleThumbPointerDown);
+        thumb.removeEventListener("pointermove", handleThumbPointerMove);
+        thumb.removeEventListener("pointerup", finishThumbDrag);
+        thumb.removeEventListener("pointercancel", finishThumbDrag);
+        window.removeEventListener("resize", scheduleUpdate);
+    };
+
+    scheduleUpdate();
+    return cleanup;
+}
+
+function bindPlaystyleScrollbar() {
+    state.playstyleScrollbarCleanup?.();
+    state.playstyleScrollbarCleanup = bindCustomScrollbar(
+        "playstyleLibrary",
+        "playstyleLibraryScrollbar",
+        "playstyleLibraryScrollbarThumb",
+    );
+}
+
 function bindPlaystyleEvents() {
+    bindPlaystyleScrollbar();
+
     document.getElementById("playstyleSearch")?.addEventListener("input", (event) => {
         state.playstyleSearch = event.target.value;
         const library = document.querySelector("#view-playstyles .ps-library");
@@ -1788,6 +1964,35 @@ function bindPlaystyleEvents() {
 }
 
 function bindPlaystyleCardEvents() {
+    document.querySelectorAll("[data-toggle-playstyle-description]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const filename = button.dataset.togglePlaystyleDescription;
+            const isSelectedCard = Boolean(button.closest(".playstyle-showcase.selected"));
+            if (state.expandedPlaystyleDescriptions.has(filename)) {
+                state.expandedPlaystyleDescriptions.delete(filename);
+            } else {
+                state.expandedPlaystyleDescriptions.add(filename);
+            }
+
+            const library = document.getElementById("playstyleLibrary");
+            const previousScrollTop = library?.scrollTop || 0;
+            if (isSelectedCard) {
+                renderPlaystyles();
+                const refreshedLibrary = document.getElementById("playstyleLibrary");
+                if (refreshedLibrary) refreshedLibrary.scrollTop = previousScrollTop;
+                return;
+            }
+
+            if (!library) return;
+            library.innerHTML = renderPlaystyleLibrary();
+            library.scrollTop = previousScrollTop;
+            bindPlaystyleCardEvents();
+        });
+    });
+
     document.querySelectorAll("[data-delete-playstyle]").forEach((button) => {
         button.addEventListener("click", async (event) => {
             event.preventDefault();

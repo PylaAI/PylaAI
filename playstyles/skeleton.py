@@ -70,11 +70,11 @@ last_movement_change_time: float = 0.0
 seconds_to_hold_attack_after_reaching_max: float = 0.0
 """Time to hold the attack button based on config."""
 
-width: int = 1920
-"""Width of the game screen."""
+width_ratio: int = 1
+"""Ratio between frame width and expected width"""
 
-height: int = 1080
-"""Height of the game screen."""
+height_ratio: int = 1
+"""Ratio between frame height and expected height"""
 
 debug: bool = False
 """True if super debug mode is enabled."""
@@ -86,8 +86,11 @@ SET THIS VARIABLE IN YOUR SCRIPT.
 The double float representing the position of the joystick to move to. -75 <= x <= 75.
 """
 
-JOYSTICK_RADIUS: int = 75
+JOYSTICK_RADIUS: int = 100
 """The radius in pixels for the virtual joystick area around the player center."""
+
+PI = math.pi
+"""The mathematical constant π (pi)."""
 
 
 # =====================================================================

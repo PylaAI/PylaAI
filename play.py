@@ -523,10 +523,22 @@ class Play:
             self.brawler_ranges = self.load_brawler_ranges(self.brawlers_info)
         return self.brawler_ranges[brawler]
 
+    @staticmethod
+    def normalize_move(x, y, radius=JOYSTICK_RADIUS):
+        length = math.hypot(x, y)
+        if length <= 0:
+            return (0.0, 0.0)
+        scale = radius / length
+        return (x * scale, y * scale)
+
     def clamp_movement(self, movement):
         x, y = movement
-        target_x = clamp(x, -JOYSTICK_RADIUS*self.window_controller.width_ratio, JOYSTICK_RADIUS*self.window_controller.width_ratio)
-        target_y = clamp(y, -JOYSTICK_RADIUS*self.window_controller.height_ratio, JOYSTICK_RADIUS*self.window_controller.height_ratio)
+        length = math.hypot(x, y)
+        if length <= 0:
+            return (0.0, 0.0)
+        scale = JOYSTICK_RADIUS / length
+        target_x = x * scale * self.window_controller.width_ratio
+        target_y = y * scale * self.window_controller.height_ratio
         return target_x, target_y
 
     def loop(self, brawler, data, current_time):
@@ -569,14 +581,18 @@ class Play:
                 "persistent_data": self.persistent_data,
                 'debug': self.verbose_debug,
                 'JOYSTICK_RADIUS': JOYSTICK_RADIUS,
-                'rotate_movement': self.rotate_movement
+                'rotate_movement': self.rotate_movement,
+                'normalize_move': self.normalize_move,
+                'width_ratio': self.window_controller.width_ratio,
+                'height_ratio': self.window_controller.height_ratio
             }
         movement = self.get_movement()
-        if self.movement_to_vector(movement) is None:
+        movement_vector = self.movement_to_vector(movement)
+        if movement_vector is None:
             self.window_controller.release_movement()
             self.last_movement = ''
             return None
-        movement = self.clamp_movement(movement)
+        movement = self.clamp_movement(movement_vector)
         current_time = time.time()
         if movement != self.last_movement:
             if current_time - self.last_movement_change_time >= self.minimum_movement_delay:
@@ -594,10 +610,13 @@ class Play:
         x1, y1 = int(hypercharge_crop_area[0] * wr), int(hypercharge_crop_area[1] * hr)
         x2, y2 = int(hypercharge_crop_area[2] * wr), int(hypercharge_crop_area[3] * hr)
         screenshot = frame[y1:y2, x1:x2]
-        purple_pixels = count_hsv_pixels(screenshot, (137, 158, 159), (179, 255, 255))
+        purple_pixels = count_hsv_pixels(screenshot, (137, 158, 159), (179, 255, 255), self.window_controller)
         if self.verbose_debug:
             print("hypercharge purple pixels:", purple_pixels, "(if > ", self.hypercharge_pixels_minimum, " then hypercharge is ready)")
-            cv2.imwrite(f"debug_frames/hypercharge_debug_{purple_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            try:
+                cv2.imwrite(f"debug_frames/hypercharge_debug_{purple_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            except Exception:
+                pass
 
         if purple_pixels > self.hypercharge_pixels_minimum:
             return True
@@ -608,10 +627,13 @@ class Play:
         x1, y1 = int(gadget_crop_area[0] * wr), int(gadget_crop_area[1] * hr)
         x2, y2 = int(gadget_crop_area[2] * wr), int(gadget_crop_area[3] * hr)
         screenshot = frame[y1:y2, x1:x2]
-        green_pixels = count_hsv_pixels(screenshot, (57, 219, 165), (62, 255, 255))
+        green_pixels = count_hsv_pixels(screenshot, (57, 219, 165), (62, 255, 255), self.window_controller)
         if self.verbose_debug:
             print("gadget green pixels:", green_pixels, "(if > ", self.gadget_pixels_minimum, " then gadget is ready)")
-            cv2.imwrite(f"debug_frames/gadget_debug_{green_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            try:
+                cv2.imwrite(f"debug_frames/gadget_debug_{green_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            except Exception:
+                pass
 
         if green_pixels > self.gadget_pixels_minimum:
             return True
@@ -622,10 +644,13 @@ class Play:
         x1, y1 = int(super_crop_area[0] * wr), int(super_crop_area[1] * hr)
         x2, y2 = int(super_crop_area[2] * wr), int(super_crop_area[3] * hr)
         screenshot = frame[y1:y2, x1:x2]
-        yellow_pixels = count_hsv_pixels(screenshot, (17, 170, 200), (27, 255, 255))
+        yellow_pixels = count_hsv_pixels(screenshot, (17, 170, 200), (27, 255, 255), self.window_controller)
         if self.verbose_debug:
             print("super yellow pixels:", yellow_pixels, "(if > ", self.super_pixels_minimum, " then super is ready)")
-            cv2.imwrite(f"debug_frames/super_debug_{yellow_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            try:
+                cv2.imwrite(f"debug_frames/super_debug_{yellow_pixels}_{int(time.time())}.png", cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR))
+            except Exception:
+                pass
 
         if yellow_pixels > self.super_pixels_minimum:
             return True
