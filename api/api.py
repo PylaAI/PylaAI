@@ -5,7 +5,7 @@ import requests
 from PIL import Image
 
 
-brawlers_url = "https://api.brawlify.com/v1/brawlers"
+brawlers_url = "https://api.brawlapi.com/v1/brawlers"
 brawlers_data = requests.get(brawlers_url).json()['list']
 
 for brawler_obj in brawlers_data:

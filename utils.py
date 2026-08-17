@@ -369,7 +369,7 @@ def save_brawler_icon(brawler_name):
     # Clean the brawler name for filename
     brawler_name_clean = brawler_name.lower().replace(' ', '').replace('-', '').replace('.', '').replace('&',
                                                                                                          '')
-    brawlers_url = "https://api.brawlify.com/v1/brawlers"
+    brawlers_url = "https://api.brawlapi.com/v1/brawlers"
     response = requests.get(brawlers_url)
     if response.status_code != 200:
         print(f"Failed to fetch brawlers from API: {response.status_code}")
