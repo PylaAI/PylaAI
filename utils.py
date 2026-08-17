@@ -727,8 +727,9 @@ def is_safe_ast(code_str):
             
         # 3. Block calling of eval, exec, compile, etc.
         if isinstance(node, ast.Name):
-            if node.id in {'exec', 'eval', 'compile', 'getattr', 'setattr', 'delattr', '__import__'}:
+            if node.id in {'exec', 'eval', 'compile', 'getattr', 'setattr', 'delattr', '__import__', 'open', 'globals', 'locals', 'vars', 'breakpoint'}:
                 return False, f"Call to '{node.id}' is forbidden."
+
 
     return True, None
 
