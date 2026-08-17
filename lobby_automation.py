@@ -114,7 +114,7 @@ class LobbyAutomation:
             else:
                 matched_key = None
                 for detected_name in clean_results.keys():
-                    if detected_name in self.all_brawlers_names[brawler]:
+                    if brawler in self.all_brawlers_names and detected_name in self.all_brawlers_names[brawler]:
                         matched_key = detected_name
                         print(f"Matched detected name '{detected_name}' to brawler '{brawler}' using alias list.")
                         break
