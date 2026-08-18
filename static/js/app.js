@@ -691,7 +691,7 @@ function renderSelectedBrawlerEditor(brawler) {
 
             <div class="editor-fields">
                 <label class="input-group">
-                    <span>Target Amount</span>
+                    <span>Target Total</span>
                     <input id="queuePushUntil" type="number" min="0" value="${existing?.push_until ?? defaultTarget}">
                 </label>
 
