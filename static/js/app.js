@@ -203,6 +203,7 @@ function bindShellEvents() {
     });
 
     document.getElementById("authForm")?.addEventListener("submit", handleLogin);
+    document.getElementById("discordLoginBtn")?.addEventListener("click", handleDiscordLogin);
     bindTooltipEvents();
 }
 
@@ -296,6 +297,21 @@ function toggleAuthModal() {
     const shouldShow = Boolean(auth.required && !auth.authenticated);
     modal.classList.toggle("hidden", !shouldShow);
 
+    const usesDiscord = auth.provider === "discord";
+    document.getElementById("discordAuthSection")?.classList.toggle("hidden", !usesDiscord);
+    document.getElementById("authForm")?.classList.toggle("hidden", usesDiscord);
+
+    if (shouldShow && usesDiscord) {
+        const heading = document.querySelector("#authModal .modal-header h3");
+        if (heading) heading.textContent = "Sign in to unlock PylaAI";
+        const instructions = document.getElementById("authInstructions");
+        if (instructions) {
+            instructions.innerHTML = "Sign in with the Discord account that holds your PylaAI role. Access is checked against Discord every time, so it follows your role automatically.";
+        }
+        renderAuthMessage(auth, auth.code && auth.code !== "MISSING_TOKEN" ? "error" : "info");
+        return;
+    }
+
     if (shouldShow) {
         const instructions = document.getElementById("authInstructions");
         if (instructions) {
@@ -367,6 +383,78 @@ async function handleLogin(event) {
     renderAuthMessage(null);
     showToast("Login successful.", "success");
     await bootstrap();
+}
+
+async function handleDiscordLogin() {
+    const button = document.getElementById("discordLoginBtn");
+    const setBusy = (busy, label) => {
+        if (!button) return;
+        button.disabled = busy;
+        button.classList.toggle("is-disabled", busy);
+        button.textContent = label;
+    };
+
+    setBusy(true, "Opening Discord...");
+
+    let start;
+    try {
+        start = await fetchJSON("/api/login/discord/start", { method: "POST" }, true);
+    } catch (error) {
+        setBusy(false, "Sign in with Discord");
+        renderAuthMessage({ message: error.message || "Could not start the login." }, "error");
+        return;
+    }
+
+    if (!start.ok) {
+        setBusy(false, "Sign in with Discord");
+        renderAuthMessage(start, "error");
+        return;
+    }
+
+    window.open(start.authorize_url, "_blank", "noopener");
+    setBusy(true, "Waiting for Discord...");
+    renderAuthMessage({ message: "Finish the login in your browser, then come back here." }, "info");
+
+    const result = await pollDiscordLogin();
+    setBusy(false, "Sign in with Discord");
+
+    if (!result.authenticated) {
+        state.bootstrap.auth = {
+            ...(state.bootstrap.auth || {}),
+            authenticated: false,
+            message: result.message || "Login failed.",
+            code: result.code,
+        };
+        renderAuthMessage(result, "error");
+        updateChrome();
+        showToast(result.message || "Login failed.", "error");
+        return;
+    }
+
+    renderAuthMessage(null);
+    showToast(result.username ? `Signed in as ${result.username}.` : "Login successful.", "success");
+    await bootstrap();
+}
+
+async function pollDiscordLogin() {
+    // The backend session times out on its own after 5 minutes; this bound is
+    // just slightly longer so the UI never polls a session that can never resolve.
+    const deadline = Date.now() + 310000;
+
+    while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        let status;
+        try {
+            status = await fetchJSON("/api/login/discord/status", {}, true);
+        } catch (error) {
+            return { authenticated: false, message: error.message || "Login check failed." };
+        }
+
+        if (!status.pending) return status;
+    }
+
+    return { authenticated: false, message: "Login timed out. Try again.", code: "LOGIN_TIMEOUT" };
 }
 
 function setView(view) {
