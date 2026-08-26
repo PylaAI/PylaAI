@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Dark browser UI (scrollbars, form controls) to match the Pyla desktop window -->
+    <meta name="theme-color" content="#0a0b0e">
+    <meta name="color-scheme" content="dark">
     <title>PylaAI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +17,7 @@
     <div id="vfx-bg"></div>
 
     <div class="app-layout">
-        <aside class="sidebar">
+        <aside id="sidebar" class="sidebar">
             <div class="brand">
                 <img class="brand-logo" src="/api/assets/support/logo.png" alt="PylaAI logo">
                 <div class="brand-copy">
@@ -37,7 +40,9 @@
 
         <main class="main-content">
             <header class="topbar">
-                <div>
+                <div class="topbar-lead">
+                    <button id="navToggle" class="nav-toggle" type="button"
+                            aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"></button>
                     <h2 id="pageTitle" class="page-title">Dashboard</h2>
                 </div>
 
@@ -59,6 +64,8 @@
 
             <div id="queueDock" class="queue-dock hidden"></div>
         </main>
+
+        <div id="navBackdrop" class="nav-backdrop" aria-hidden="true"></div>
     </div>
 
     <div id="authModal" class="modal-overlay hidden">
