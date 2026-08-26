@@ -1,6 +1,5 @@
 import atexit
 import json
-import math
 import os
 import struct
 import subprocess
