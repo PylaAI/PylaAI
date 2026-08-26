@@ -2,12 +2,7 @@ from __future__ import annotations
 
 import threading
 from typing import Any, Callable
-import time
 import traceback
-
-# How often a running bot re-checks that its login is still valid. The auth
-# server caches role lookups for a minute, so polling faster only adds noise.
-AUTH_RECHECK_SECONDS = 300
 
 
 class RuntimeControl:
@@ -49,7 +44,6 @@ class RuntimeManager:
         self._last_error = ""
         self.queue_provider: Callable[[], list[dict[str, Any]]] | None = None
         self._auth_provider: Callable[[], dict[str, Any]] | None = None
-        self._auth_watchdog: threading.Thread | None = None
     def _set_state(self, state: str):
         with self._lock:
             self._state = state
@@ -97,16 +91,6 @@ class RuntimeManager:
                 name="pyla-runtime",
             )
             self._thread.start()
-
-            if self._auth_provider:
-                self._auth_watchdog = threading.Thread(
-                    target=self._watch_auth,
-                    args=(self._thread,),
-                    daemon=True,
-                    name="pyla-auth-watchdog",
-                )
-                self._auth_watchdog.start()
-
             return {"ok": True, "message": "Pyla started."}
 
     def start_current_queue(self, discord_bot) -> dict[str, Any]:
@@ -132,43 +116,6 @@ class RuntimeManager:
             }
 
         return self.start(queue_data, discord_bot)
-
-    def _watch_auth(self, runtime_thread: threading.Thread):
-        """Stop the bot if the account loses access while it is running.
-
-        Without this, revoking a Discord role would only take effect at the next
-        start, letting a cancelled subscription keep running indefinitely.
-        """
-        while runtime_thread.is_alive():
-            # Sleep in short slices so a finished run is noticed promptly.
-            for _ in range(AUTH_RECHECK_SECONDS):
-                if not runtime_thread.is_alive():
-                    return
-                time.sleep(1)
-
-            try:
-                auth_state = self._auth_provider()
-            except Exception as exc:
-                print(f"Auth re-check failed, leaving Pyla running: {exc}")
-                continue
-
-            if not auth_state.get("required", False):
-                return
-
-            # A transient outage must not kill a paying user's run; only an
-            # explicit refusal from the auth server stops the bot.
-            if auth_state.get("code") in {"AUTH_SERVER_UNREACHABLE", "DISCORD_UNAVAILABLE"}:
-                print("Auth server unreachable, leaving Pyla running.")
-                continue
-
-            if not auth_state.get("authenticated", False):
-                message = auth_state.get("message") or "Access revoked."
-                print(f"Stopping Pyla: {message}")
-                self.stop()
-                with self._lock:
-                    self._state = "error"
-                    self._last_error = f"Access revoked: {message}"
-                return
 
     def _run_worker(self, queue_data: list[dict[str, Any]], control: RuntimeControl, discord_bot):
         try:

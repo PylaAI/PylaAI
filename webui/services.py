@@ -11,8 +11,6 @@ import requests
 from packaging import version
 from werkzeug.utils import secure_filename
 
-import pyla_discord_auth as discord_auth
-
 from utils import (
     api_base_url,
     clean_queue,
@@ -158,7 +156,6 @@ class WebDataService:
         self._latest_version_cache: str | None = None
         self._queue_items: list[dict[str, Any]] = []
         self._runtime_queue_mtime: float | None = None
-        self._discord_login_session: Any = None
         self._load_startup_queue_if_enabled()
 
     @staticmethod
@@ -237,9 +234,6 @@ class WebDataService:
             traceback.print_exc()
 
     def get_auth_state(self) -> dict[str, Any]:
-        if discord_auth.is_configured():
-            return self._discord_auth_state()
-
         login_required = api_base_url != "localhost" or early_access
         if not login_required:
             return {
@@ -296,70 +290,7 @@ class WebDataService:
                 "code": "LOGIN_CHECK_FAILED",
             }
 
-    def _discord_auth_state(self) -> dict[str, Any]:
-        """Auth state backed by the Discord role check on the auth server."""
-        token = discord_auth.load_saved_token()
-        if not token:
-            return {
-                "required": True,
-                "authenticated": False,
-                "provider": "discord",
-                "message": "Sign in with Discord to unlock PylaAI.",
-                "code": "MISSING_TOKEN",
-            }
-
-        result = discord_auth.validate_token(token)
-        authenticated = bool(result.get("ok") and result.get("authenticated"))
-        if not authenticated:
-            logger.info(
-                "Discord auth refused: code=%s message=%s",
-                result.get("code"),
-                result.get("message"),
-            )
-
-        return {
-            "required": True,
-            "authenticated": authenticated,
-            "provider": "discord",
-            "message": result.get("message", ""),
-            "code": result.get("code"),
-            "username": result.get("username", ""),
-        }
-
-    def start_discord_login(self) -> dict[str, Any]:
-        """Open a login session and return the URL the browser must visit."""
-        if not discord_auth.is_configured():
-            return {
-                "ok": False,
-                "message": "Discord login is not configured (set auth_base_url).",
-                "code": "AUTH_NOT_CONFIGURED",
-            }
-
-        self._discord_login_session = discord_auth.LoginSession()
-        return {
-            "ok": True,
-            "authorize_url": self._discord_login_session.authorize_url,
-        }
-
-    def discord_login_status(self) -> dict[str, Any]:
-        session = getattr(self, "_discord_login_session", None)
-        if session is None:
-            return {"ok": False, "pending": False, "message": "No login in progress."}
-        return {"ok": True, **session.status()}
-
-    def logout(self) -> dict[str, Any]:
-        discord_auth.clear_token()
-        self._discord_login_session = None
-        return {"ok": True, "message": "Signed out."}
-
     def validate_login(self, api_key: str) -> dict[str, Any]:
-        if discord_auth.is_configured():
-            # With Discord enabled the pasted value is a backend-issued token.
-            result = discord_auth.validate_token(api_key.strip())
-            if result.get("ok") and result.get("authenticated"):
-                discord_auth.save_token(api_key.strip())
-            return result
-
         if api_base_url == "localhost" and not early_access:
             return {
                 "ok": True,

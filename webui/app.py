@@ -119,19 +119,6 @@ def create_app(pyla_main, start_discord_bot=False):
         result = data_service.validate_login(payload.get("api_key", ""))
         return jsonify(result), (200 if result.get("ok") else 400)
 
-    @app.post("/api/login/discord/start")
-    def start_discord_login():
-        result = data_service.start_discord_login()
-        return jsonify(result), (200 if result.get("ok") else 400)
-
-    @app.get("/api/login/discord/status")
-    def discord_login_status():
-        return jsonify(data_service.discord_login_status())
-
-    @app.post("/api/logout")
-    def logout():
-        return jsonify(data_service.logout())
-
     @app.get("/api/player-info")
     def player_info():
         result = data_service.get_player_info_payload(request.args.get("tag", ""))
