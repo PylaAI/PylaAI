@@ -31,7 +31,6 @@ from adbutils import AdbError
 import socket
 import threading
 import time
-import webbrowser
 from lobby_automation import LobbyAutomation
 from play import Play
 from stage_manager import StageManager
@@ -42,6 +41,7 @@ from utils import load_toml_as_dict, current_wall_model_is_latest, api_base_url,
 from utils import get_brawler_list, update_missing_brawlers_info, check_version, notify_user, update_wall_model_classes, get_latest_wall_model_file, cprint
 from window_controller import WindowController
 from webui import create_app
+import desktop_window
 
 
 def apply_play_order(queue_data):
@@ -406,20 +406,20 @@ def find_open_port(start_port=5185, host="127.0.0.1"):
     raise RuntimeError("Could not find an open localhost port for the Flask UI.")
 
 
-def open_browser_later(local_url):
-    def _open():
-        time.sleep(1.5)
-        webbrowser.open(local_url)
-
-    threading.Thread(target=_open, daemon=True, name="pyla-browser-launcher").start()
-
-
 if __name__ == "__main__":
     print("Starting PylaAI, the best free and open source brawl stars bot")
     print("The only official discord is", get_discord_link())
     port = find_open_port()
     app = create_app(pyla_main, start_discord_bot=True)
     local_url = f"http://127.0.0.1:{port}"
-    print(f"Starting Pyla web UI at {local_url}")
-    open_browser_later(local_url)
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    print(f"Starting PylaAI at {local_url}")
+
+    def start_server():
+        # Bind to loopback only: this is a local desktop UI, it must not be
+        # reachable from the network.
+        app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+
+    # Open the browser instead of a native window when PYLA_NO_WINDOW is set,
+    # which keeps the old workflow available for development.
+    prefer_window = os.environ.get("PYLA_NO_WINDOW", "").strip() not in {"1", "true", "yes"}
+    desktop_window.run(local_url, start_server, prefer_window=prefer_window)
