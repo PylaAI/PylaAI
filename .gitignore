@@ -26,3 +26,5 @@ projectiles_logic.csv
 pyla-v0.9.4.zip
 test3.py
 texts.csv
+cfg/instances_config.json
+cfg/default/match_history.csv
