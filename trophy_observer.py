@@ -88,17 +88,20 @@ class TrophyObserver:
     def win_streak_gain(self):
         return min(self.win_streak - 1, 10) if self.current_trophies < 2000 else 0
 
-    def calc_lost_decrement(self):
+    def calc_lost_decrement(self, underdog):
         for max_trophies, loss in self.trophy_lose_ranges:
             if float(self.current_trophies) <= float(max_trophies):
-                return loss
+                return loss - (3 if underdog else 0)
         raise ValueError("Current trophies exceed all defined ranges")
 
-    def calc_win_increment(self):
+    def calc_win_increment(self, underdog):
         for max_trophies, gain in self.trophy_win_ranges:
             if float(self.current_trophies) <= float(max_trophies):
-                return gain * self.trophies_multiplier + self.win_streak_gain()
+                return gain * self.trophies_multiplier + self.win_streak_gain() + (5 if underdog else 0)
         raise ValueError("Current trophies exceed all defined ranges")
+
+    def calc_draw_increment(self, underdog):
+        return 4 if (underdog and self.current_trophies < 2000) else 0
 
     def calc_showdown_delta(self, place):
         for max_trophies, deltas in self.showdown_trio_ranges:
@@ -171,8 +174,10 @@ class TrophyObserver:
                 raw_string=raw_result
             )
 
-    def add_trophies(self, parsed_result: ParsedGameResult, current_brawler, playstyle_info, power_level=None):
+    def add_trophies(self, parsed_result: ParsedGameResult, current_brawler, playstyle_info, underdog, power_level=None):
         old_trophies = self.current_trophies
+        if old_trophies >= 2000:
+            underdog = False
         old_win_streak = self.win_streak
 
         if parsed_result.result == MatchResult.VICTORY:
@@ -180,19 +185,20 @@ class TrophyObserver:
             if parsed_result.place is not None:
                 trophy_delta = self.calc_showdown_delta(parsed_result.place)
             else:
-                trophy_delta = self.calc_win_increment()
+                trophy_delta = self.calc_win_increment(underdog)
         elif parsed_result.result == MatchResult.DEFEAT:
-            self.win_streak = 0
+            if not underdog:
+                self.win_streak = 0
             if parsed_result.place is not None:
                 trophy_delta = self.calc_showdown_delta(parsed_result.place)
             else:
-                trophy_delta = -self.calc_lost_decrement()
+                trophy_delta = -self.calc_lost_decrement(underdog)
         elif parsed_result.result == MatchResult.DRAW:
             if parsed_result.place is not None:
                 trophy_delta = self.calc_showdown_delta(parsed_result.place)
             else:
                 print("Nothing changed. Draw detected")
-                trophy_delta = 0
+                trophy_delta = self.calc_draw_increment(underdog)
         else:
             print("Catastrophic failure")
             trophy_delta = 0

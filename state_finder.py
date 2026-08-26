@@ -182,6 +182,10 @@ def is_in_star_drop(image):
     return False
 
 
+def is_underdog(image):
+    return is_template_in_region(image, end_results_path + "underdog.png", region_data['underdog'])
+
+
 def get_state(screenshot):
     state = get_in_game_state(screenshot)
     if config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('state_finder_debug'), False): cv2.imwrite(f"./debug_frames/state_screenshot_{state}_{len(os.listdir('./debug_frames'))}.png", cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB))
