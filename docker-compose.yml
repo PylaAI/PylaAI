@@ -1,0 +1,24 @@
+services:
+  pylaai:
+    build: .
+    image: pylaai:linux
+    container_name: pylaai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Password-protect the web UI (HTTP Basic Auth). Leave PYLA_WEB_PASSWORD
+      # empty to disable the gate (only safe on a private network).
+      PYLA_WEB_USERNAME: "${PYLA_WEB_USERNAME:-pyla}"
+      PYLA_WEB_PASSWORD: "${PYLA_WEB_PASSWORD:-}"
+      # Point the adb client at the emulator's adb server. For a BlueStacks on
+      # another machine, run `adb -a nodaemon server` there and set the host to
+      # that machine (ideally over a Tailscale/WireGuard IP, never a public one).
+      ANDROID_ADB_SERVER_HOST: "${ADB_HOST:-host.docker.internal}"
+      ANDROID_ADB_SERVER_PORT: "${ADB_PORT:-5037}"
+    # Lets the container reach an adb server running on the Docker host itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist config and match history across restarts.
+      - ./cfg:/app/cfg

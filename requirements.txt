@@ -1,7 +1,6 @@
 aiohttp~=3.13
 opencv-python~=4.11
 numpy~=2.3
-onnxruntime-directml~=1.24
 requests~=2.32
 toml~=0.10
 torch~=2.8
@@ -9,11 +8,19 @@ torchvision~=0.23
 pillow>=11.2.1
 discord.py~=2.7
 packaging>=25.0
-pywin32>=311
 easyocr~=1.7
 adbutils~=2.12
 av~=12.3
 Flask~=3.1
 pycryptodome~=3.21
 pandas~=3.0
-pywebview~=5.4
+
+# --- Platform-specific ---
+# DirectML ONNX runtime is Windows-only; everywhere else use the standard build.
+onnxruntime-directml~=1.24 ; sys_platform == "win32"
+onnxruntime~=1.24 ; sys_platform != "win32"
+
+# Windows-only helpers. pywin32 is not imported by the code today, but kept for
+# the Windows build; pywebview powers the native desktop window on Windows.
+pywin32>=311 ; sys_platform == "win32"
+pywebview~=5.4 ; sys_platform == "win32"

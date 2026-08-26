@@ -406,20 +406,39 @@ def find_open_port(start_port=5185, host="127.0.0.1"):
     raise RuntimeError("Could not find an open localhost port for the Flask UI.")
 
 
+def _is_headless() -> bool:
+    return os.environ.get("PYLA_HEADLESS", "").strip() in {"1", "true", "yes"}
+
+
 if __name__ == "__main__":
     print("Starting PylaAI, the best free and open source brawl stars bot")
     print("The only official discord is", get_discord_link())
-    port = find_open_port()
     app = create_app(pyla_main, start_discord_bot=True)
-    local_url = f"http://127.0.0.1:{port}"
-    print(f"Starting PylaAI at {local_url}")
 
-    def start_server():
-        # Bind to loopback only: this is a local desktop UI, it must not be
-        # reachable from the network.
-        app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+    if _is_headless():
+        # Server mode: no native window, no browser. Bind to all interfaces so
+        # the container can publish the port, and gate the UI with a password
+        # when PYLA_WEB_PASSWORD is set. Put this behind a TLS reverse proxy.
+        from webui.auth_gate import wrap_if_configured
 
-    # Open the browser instead of a native window when PYLA_NO_WINDOW is set,
-    # which keeps the old workflow available for development.
-    prefer_window = os.environ.get("PYLA_NO_WINDOW", "").strip() not in {"1", "true", "yes"}
-    desktop_window.run(local_url, start_server, prefer_window=prefer_window)
+        host = os.environ.get("PYLA_HOST", "0.0.0.0")
+        port = int(os.environ.get("PYLA_PORT", "8000"))
+        print(f"Starting PylaAI (headless) on http://{host}:{port}")
+        wrapped = wrap_if_configured(app)
+        from werkzeug.serving import run_simple
+
+        run_simple(host, port, wrapped, threaded=True, use_reloader=False)
+    else:
+        port = find_open_port()
+        local_url = f"http://127.0.0.1:{port}"
+        print(f"Starting PylaAI at {local_url}")
+
+        def start_server():
+            # Bind to loopback only: this is a local desktop UI, it must not be
+            # reachable from the network.
+            app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+
+        # Open the browser instead of a native window when PYLA_NO_WINDOW is set,
+        # which keeps the old workflow available for development.
+        prefer_window = os.environ.get("PYLA_NO_WINDOW", "").strip() not in {"1", "true", "yes"}
+        desktop_window.run(local_url, start_server, prefer_window=prefer_window)
