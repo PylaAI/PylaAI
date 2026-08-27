@@ -33,7 +33,6 @@ class _SuppressAssetsGetting(logging.Filter):
         message = record.getMessage()
         return not (
             'GET /api/assets' in message
-            and '304 -' in message
         )
 
 class _SupressHistoryPolling(logging.Filter):

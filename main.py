@@ -1,3 +1,4 @@
+import argparse
 import inspect
 import os
 import sys
@@ -26,6 +27,42 @@ if __name__ == "__main__" and len(sys.argv) >= 9 and sys.argv[1] == "--debug-vie
         record_clips=(len(sys.argv) >= 11 and sys.argv[10] == "1"),
     )
     sys.exit(0)
+
+from desktop import console_log_path, hide_console, import_webview, run_webview
+
+
+def parse_cli_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="PylaAI",
+        description="PylaAI, the best free and open source brawl stars bot.",
+    )
+    parser.add_argument(
+        "--no-console",
+        action="store_true",
+        help="Hide PylaAI's own console and write output to a log file.",
+    )
+    parser.add_argument(
+        "--web",
+        "--no-webapp",
+        dest="force_web",
+        action="store_true",
+        help="Force the UI to open in the system browser instead of pywebview.",
+    )
+    args, _unknown_args = parser.parse_known_args(argv)
+    return args
+
+
+# Parse these before the heavy application imports so console hiding happens as
+# early as possible. Imported modules receive harmless default values.
+CLI_ARGS = parse_cli_args(sys.argv[1:] if __name__ == "__main__" else [])
+CONSOLE_HIDDEN = CLI_ARGS.no_console and hide_console()
+
+if CLI_ARGS.no_console and not CONSOLE_HIDDEN:
+    print(
+        "--no-console ignored: this console belongs to the terminal PylaAI was "
+        "started from, so output stays here."
+    )
+
 
 from adbutils import AdbError
 import socket
@@ -413,6 +450,16 @@ def open_browser_later(local_url):
 
     threading.Thread(target=_open, daemon=True, name="pyla-browser-launcher").start()
 
+def stop_on_window_close(app):
+    """Ask a running bot instance to stop when its desktop window closes."""
+    def _on_close():
+        print("PylaAI window closed, shutting down.")
+        try:
+            app.config["runtime_manager"].stop(force=True)
+        except Exception as error:
+            print(f"Could not stop the bot cleanly: {error}")
+
+    return _on_close
 
 if __name__ == "__main__":
     print("Starting PylaAI, the best free and open source brawl stars bot")
@@ -421,5 +468,25 @@ if __name__ == "__main__":
     app = create_app(pyla_main, start_discord_bot=True)
     local_url = f"http://127.0.0.1:{port}"
     print(f"Starting Pyla web UI at {local_url}")
-    open_browser_later(local_url)
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    if CONSOLE_HIDDEN:
+        print(f"Console output is written to {console_log_path()}")
+
+    webview_module = None
+    webview_error = None
+    if not CLI_ARGS.force_web:
+        webview_module, webview_error = import_webview()
+
+    if webview_module is not None:
+        try:
+            run_webview(app, local_url, webview_module, on_close=stop_on_window_close(app))
+        except Exception as error:
+            print(f"Could not start pywebview ({error}); opening the system browser instead.")
+            open_browser_later(local_url)
+            app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    else:
+        if webview_error is not None:
+            print(f"pywebview is unavailable ({webview_error}); opening the system browser instead.")
+        elif CLI_ARGS.force_web:
+            print("Browser mode was forced with --web.")
+        open_browser_later(local_url)
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

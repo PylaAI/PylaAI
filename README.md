@@ -1,11 +1,11 @@
 # PylaAI
 
 [![CC BY-NC 4.0 License](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
-[![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/pylaai)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/xUusk3fw4A)
 [![Trello](https://img.shields.io/badge/Trello-0079BF?logo=trello&logoColor=white)](https://trello.com/b/SAz9J6AA/public-pyla-trello)
 
 > [!WARNING]
-> **Warning**: There are two versions of PylaAI, you are currently browsing the source code for developers. Please visit our [Discord](https://discord.gg/pylaai) to use the compiled version, which comes as a ready-to-use `.exe`.
+> **Warning**: There are two versions of PylaAI, you are currently browsing the source code for developers. Please visit our [Discord](https://discord.gg/xUusk3fw4A) to use the compiled version, which comes as a ready-to-use `.exe`.
 
 PylaAI is currently the best external Brawl Stars bot.
 
@@ -47,6 +47,14 @@ Run the bot:
 python main.py
 ```
 
+### Startup options
+
+| Flag | Effect |
+| --- | --- |
+| *(none)* | Console visible, UI in the Pyla desktop window |
+| `--no-console` | Hides the console window, output goes to `%LOCALAPPDATA%\PylaAI\pyla.log`. Ignored when Pyla is started from an existing terminal, so your own terminal is never hidden. |
+| `--no-webapp` | Opens the UI in the default browser instead of the desktop window |
+
 
 ## License
 
@@ -66,3 +74,4 @@ This project is **not permitted to be sold or monetized** under [CC BY-NC 4.0](h
 - **simonrejzek**
 - **bocchi-the-cat**
 - **Ariko842**
+- **Nauwk07**
