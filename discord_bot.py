@@ -395,14 +395,16 @@ class DiscordBot:
                 "status": "Returns the current status of the bot",
                 "restart_brawl_stars": "Restarts Brawl Stars if the bot is running",
                 "view_queue": "View the current queue of the bot",
-                "add_to_queue": ("**Early Access Only :**" if not early_access else "") + "Add a brawler to the queue (only works when the bot is not running)",
-                "remove_from_queue": ("**Early Access Only :**" if not early_access else "") + "Remove a brawler from the queue (only works when the bot is not running)",
-                "clear_queue": ("**Early Access Only :**" if not early_access else "") + "Clear the current queue (only works when the bot is not running)",
-                "activate_playstyle": ("**Early Access Only :**" if not early_access else "") + "Activate a playstyle (only works when the bot is not running)",
+                "add_to_queue": ("**Premium Only :**" if not early_access else "") + "Add a brawler to the queue (only works when the bot is not running)",
+                "remove_from_queue": ("**Premium Only :**" if not early_access else "") + "Remove a brawler from the queue (only works when the bot is not running)",
+                "clear_queue": ("**Premium Only :**" if not early_access else "") + "Clear the current queue (only works when the bot is not running)",
+                "push_all": ("**Premium Only :**" if not early_access else "") + "Add all brawlers below target trophies to the queue (only works when the bot is not running)",
+                "switch_player_tag": ("**Premium Only :**" if not early_access else "") + "Switch or view the player tag for the current instance (only works when the bot is not running)",
+                "activate_playstyle": ("**Premium Only Only :**" if not early_access else "") + "Activate a playstyle (only works when the bot is not running)",
             }
             message = "**Available commands:**\n" + "\n".join(f"- `{command}`: {description}" for command, description in commands.items())
             if not early_access:
-                message += "\n\n**Unlock Early Access:** Obtain the early_access module from the paid channel on our Discord server: <https://discord.com/channels/1205263029269438574/1233146889843769417>"
+                message += "\n\n**Unlock Premium:** Obtain the premium module to obtain access to additional features and commands. Check https://angelfirela.dev/premium for more information."
             await interaction.response.send_message(
                 message,
                 ephemeral=True

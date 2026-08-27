@@ -491,7 +491,7 @@ function renderDashboard() {
 
                 <div class="link-row support-link-row">
                     ${renderSupportLink(links.discord, "Discord", "Get help, announcements, and community discussion")}
-                    ${renderSupportLink(links.patreon, "Patreon", "Support PylaAI and get early access to newer versions")}
+                    ${renderSupportLink(links.patreon, "Patreon", "Support PylaAI and get exclusive features and early access to newer versions")}
                 </div>
             </section>
         </div>
@@ -540,8 +540,8 @@ function getPlayerPillState() {
     if (!state.bootstrap?.auth?.early_access) {
         return {
             className: "early-access-locked",
-            title: "Early Access Required",
-            detail: "Get early access to sync live stats from Brawl Stars API.",
+            title: "Premium Required",
+            detail: "Get Premium to sync live stats from Brawl Stars API.",
         };
     }
 
@@ -611,8 +611,8 @@ function renderQueue() {
                             <input id="brawlerSearch" type="search" placeholder="Search by brawler name" value="${escapeHtml(state.brawlerSearch)}">
                         </label>
                         <label class="input-group ${!state.bootstrap?.auth?.early_access ? "disabled-early-access" : ""}">
-                            <span>Player Tag ${!state.bootstrap?.auth?.early_access ? `<span class="ea-badge">Early Access</span>` : ""}</span>
-                            <input id="playerTagInput" type="text" placeholder="${!state.bootstrap?.auth?.early_access ? "Locked - Early Access Only" : "#PLAYER"}" value="${!state.bootstrap?.auth?.early_access ? "" : escapeHtml(formatPlayerTagInput(state.bootstrap.settings.general.player_tag || ""))}" ${!state.bootstrap?.auth?.early_access ? "disabled" : ""}>
+                            <span>Player Tag ${!state.bootstrap?.auth?.early_access ? `<span class="ea-badge">Premium</span>` : ""}</span>
+                            <input id="playerTagInput" type="text" placeholder="${!state.bootstrap?.auth?.early_access ? "Locked - Premium Only" : "#PLAYER"}" value="${!state.bootstrap?.auth?.early_access ? "" : escapeHtml(formatPlayerTagInput(state.bootstrap.settings.general.player_tag || ""))}" ${!state.bootstrap?.auth?.early_access ? "disabled" : ""}>
                         </label>
                     </div>
                     <div class="queue-toolbar-bottom">
@@ -1319,7 +1319,7 @@ function renderSettingField(section, field, value) {
         return `
             <label class="setting-row check-card check-card-right ${isEarlyAccessLocked ? "setting-locked ea-locked-action" : ""}">
                 <span class="check-info">
-                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Early Access</span>` : ""}</strong>
+                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Premium</span>` : ""}</strong>
                     <span>${escapeHtml(field.help)}</span>
                 </span>
                 <span class="check-control">
@@ -1360,13 +1360,13 @@ function renderSettingField(section, field, value) {
         <div class="setting-row ${isEarlyAccessLocked ? "setting-locked ea-locked-action" : ""}">
             <div class="setting-copy">
                 <div class="setting-label">
-                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Early Access</span>` : ""}</strong>
+                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Premium</span>` : ""}</strong>
                     <span class="tooltip-anchor" data-tooltip="${escapeHtml(field.help)}">?</span>
                 </div>
                 <p class="help-text">${escapeHtml(field.help)}</p>
             </div>
             <div class="setting-input-wrap ${field.suffix ? "has-suffix" : ""}">
-                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isEarlyAccessLocked ? "Locked - Early Access Only" : escapeHtml(configuredSecretPlaceholder)}" value="${isEarlyAccessLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isEarlyAccessLocked ? "readonly" : ""}>
+                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isEarlyAccessLocked ? "Locked - Premium Only" : escapeHtml(configuredSecretPlaceholder)}" value="${isEarlyAccessLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isEarlyAccessLocked ? "readonly" : ""}>
                 ${field.suffix ? `<span class="input-suffix">${escapeHtml(field.suffix)}</span>` : ""}
             </div>
         </div>
@@ -2526,13 +2526,13 @@ function showEarlyAccessModal() {
         eaModal.innerHTML = `
             <div class="modal">
                 <div class="modal-header">
-                    <p class="eyebrow" style="color: #ff9f1a; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;">Early Access Feature</p>
+                    <p class="eyebrow" style="color: #ff9f1a; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;">Premium Feature</p>
                     <h3 style="font-size: 1.35rem; font-weight: 900; margin-bottom: 6px; color: white;">Unlock Premium Features</h3>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px; line-height: 1.55;">This feature (such as Player Tag API integration, Push All, and Advanced Debug Visuals) requires the <strong>Pyla Early Access</strong> module.</p>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.55;">Early access is obtainable on our Discord server in #how-to-get-early-access.</p>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px; line-height: 1.55;">This feature (such as Player Tag API integration, Push All, and Advanced Debug Visuals) requires <strong>Premium</strong>.</p>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.55;">Check https://angelfirela.dev/premium for more info</p>
                 </div>
                 <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
-                    <a class="btn btn-primary w-full" href="https://discord.com/channels/1205263029269438574/1233146889843769417" target="_blank" rel="noreferrer" style="background: #ff9f1a; border-color: transparent; color: black; font-weight: 800; box-shadow: 0 8px 20px rgba(255, 159, 26, 0.25);">Get Early Access</a>
+                    <a class="btn btn-primary w-full" href="https://angelfirela.dev/premium" target="_blank" rel="noreferrer" style="background: #ff9f1a; border-color: transparent; color: black; font-weight: 800; box-shadow: 0 8px 20px rgba(255, 159, 26, 0.25);">Get Premium</a>
                     <button id="closeEAModalBtn" class="btn w-full" style="font-weight: 700;">Maybe Later</button>
                 </div>
             </div>
