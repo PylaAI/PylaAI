@@ -404,7 +404,7 @@ class DiscordBot:
             }
             message = "**Available commands:**\n" + "\n".join(f"- `{command}`: {description}" for command, description in commands.items())
             if not early_access:
-                message += "\n\n**Unlock Premium:** Obtain the premium module to obtain access to additional features and commands. Check https://angelfirela.dev/premium for more information."
+                message += "\n\n**Unlock Premium:** Obtain the premium module to obtain access to additional features and commands. Check https://pyla-ai.angelfirela.dev/premium for more information."
             await interaction.response.send_message(
                 message,
                 ephemeral=True

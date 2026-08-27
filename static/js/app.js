@@ -2529,10 +2529,10 @@ function showEarlyAccessModal() {
                     <p class="eyebrow" style="color: #ff9f1a; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;">Premium Feature</p>
                     <h3 style="font-size: 1.35rem; font-weight: 900; margin-bottom: 6px; color: white;">Unlock Premium Features</h3>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px; line-height: 1.55;">This feature (such as Player Tag API integration, Push All, and Advanced Debug Visuals) requires <strong>Premium</strong>.</p>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.55;">Check https://angelfirela.dev/premium for more info</p>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.55;">Check https://pyla-ai.angelfirela.dev/premium for more info</p>
                 </div>
                 <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
-                    <a class="btn btn-primary w-full" href="https://angelfirela.dev/premium" target="_blank" rel="noreferrer" style="background: #ff9f1a; border-color: transparent; color: black; font-weight: 800; box-shadow: 0 8px 20px rgba(255, 159, 26, 0.25);">Get Premium</a>
+                    <a class="btn btn-primary w-full" href="https://pyla-ai.angelfirela.dev/premium" target="_blank" rel="noreferrer" style="background: #ff9f1a; border-color: transparent; color: black; font-weight: 800; box-shadow: 0 8px 20px rgba(255, 159, 26, 0.25);">Get Premium</a>
                     <button id="closeEAModalBtn" class="btn w-full" style="font-weight: 700;">Maybe Later</button>
                 </div>
             </div>
