@@ -47,6 +47,14 @@ Run the bot:
 python main.py
 ```
 
+### Startup options
+
+| Flag | Effect |
+| --- | --- |
+| *(none)* | Console visible, UI in the Pyla desktop window |
+| `--no-console` | Hides the console window, output goes to `%LOCALAPPDATA%\PylaAI\pyla.log`. Ignored when Pyla is started from an existing terminal, so your own terminal is never hidden. |
+| `--no-webapp` | Opens the UI in the default browser instead of the desktop window |
+
 
 ## License
 
@@ -66,3 +74,4 @@ This project is **not permitted to be sold or monetized** under [CC BY-NC 4.0](h
 - **simonrejzek**
 - **bocchi-the-cat**
 - **Ariko842**
+- **Nauwk07**
