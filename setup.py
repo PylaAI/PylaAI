@@ -108,6 +108,7 @@ install_requires = [
     "Flask~=3.1",
     "pycryptodome~=3.21",
     "pandas~=3.0",
+    "pywebview~=6.2.1"
 ]
 
 setup(
