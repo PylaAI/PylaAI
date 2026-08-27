@@ -455,7 +455,7 @@ def stop_on_window_close(app):
     def _on_close():
         print("PylaAI window closed, shutting down.")
         try:
-            app.config["runtime_manager"].stop(force=True)
+            app.config["runtime_manager"].stop()
         except Exception as error:
             print(f"Could not stop the bot cleanly: {error}")
 
