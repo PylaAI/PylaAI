@@ -28,13 +28,6 @@
     --success-dim: rgba(34, 197, 94, 0.15);
     --error: #ff4444;
     
-    /* Scrollbars */
-    --scrollbar-size: 10px;
-    --scrollbar-inset: 3px;
-    --scrollbar-thumb: rgba(255, 255, 255, 0.18);
-    --scrollbar-thumb-hover: rgba(255, 42, 68, 0.6);
-    --scrollbar-thumb-active: var(--brand-main);
-
     /* Layout */
     --sidebar-width: 224px;
     --radius-sm: 6px;
@@ -49,36 +42,6 @@ a { color: inherit; text-decoration: none; }
 button, input, select { font: inherit; background: transparent; border: none; color: inherit; outline: none; }
 img { max-width: 100%; display: block; }
 .hidden { display: none !important; }
-
-/* =========================================================================
-   SCROLLBARS - thin, rounded, brand tinted, everywhere
-   The transparent border keeps the thumb floating inside its gutter, so the
-   bar stays hairline thin while the grab area stays comfortable.
-   ========================================================================= */
-::-webkit-scrollbar { width: var(--scrollbar-size); height: var(--scrollbar-size); }
-::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-::-webkit-scrollbar-button { width: 0; height: 0; display: none; }
-::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    background-clip: padding-box;
-    border: var(--scrollbar-inset) solid transparent;
-    border-radius: var(--radius-pill);
-}
-/* The background shorthand resets background-clip, hence the repeat below */
-::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
-    background-clip: padding-box;
-    border-width: 2px;
-}
-::-webkit-scrollbar-thumb:active {
-    background: var(--scrollbar-thumb-active);
-    background-clip: padding-box;
-    border-width: 2px;
-}
-/* Engines without the WebKit pseudo elements (Firefox) */
-@supports not selector(::-webkit-scrollbar) {
-    * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
-}
 
 /* Typography Basics */
 body {
@@ -166,30 +129,6 @@ body {
     padding: 16px 30px 4px; flex-shrink: 0;
 }
 .page-title { font-size: 2rem; font-weight: 900; letter-spacing: 0; }
-
-/* Burger + drawer, only wired up under the sidebar breakpoint below */
-.topbar-lead { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.nav-toggle {
-    display: none; align-items: center; justify-content: center;
-    width: 42px; height: 42px; flex-shrink: 0; cursor: pointer;
-    border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-    background: rgba(255,255,255,0.04); color: var(--text-primary);
-    transition: all 0.2s ease;
-}
-.nav-toggle:hover { background: var(--brand-dim); border-color: var(--border-brand); color: var(--brand-main); }
-.nav-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-.nav-backdrop {
-    position: fixed; inset: 0; z-index: 40;
-    background: rgba(3, 3, 5, 0.6);
-    backdrop-filter: blur(3px);
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.25s ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .sidebar, .nav-backdrop { transition: none; }
-}
 
 .header-actions { display: flex; gap: 10px; }
 .badge { padding: 6px 12px; border-radius: var(--radius-pill); font-size: 0.78rem; font-weight: 700; background: var(--success-dim); color: var(--success); border: 1px solid rgba(34, 197, 94, 0.3); }
@@ -318,6 +257,8 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
 }
 .queue-title { font-size: 0.78rem; text-transform: uppercase; font-weight: 800; color: var(--brand-main); letter-spacing: 0.15em; }
 .queue-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.queue-strip::-webkit-scrollbar { height: 6px; }
+.queue-strip::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
 .queue-item {
     display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 10px; border: 1px solid var(--border-strong);
     background: rgba(255,255,255,0.05); border-radius: var(--radius-md); min-width: 150px; flex-shrink: 0; cursor: grab; position: relative;
@@ -368,6 +309,8 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
 .ps-lib-wrap { flex: 1; display: flex; flex-direction: column; min-height: 290px; }
 .ps-lib-title { font-size: 0.74rem; font-weight: 800; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 14px; letter-spacing: 0.05em; }
 .ps-library { display: flex; gap: 16px; overflow-x: auto; padding-top: 6px; padding-bottom: 14px; flex: 1; align-items: stretch; scroll-behavior: smooth;}
+.ps-library::-webkit-scrollbar { height: 8px; }
+.ps-library::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
 .ps-card {
     min-width: 260px; width: 260px; flex-shrink: 0; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-lg);
     padding: 14px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: all 0.25s; position: relative;
@@ -461,7 +404,11 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
 .history-match-count { color: var(--text-primary); font-size: 1.02rem; font-weight: 900; white-space: nowrap; }
 .history-chart-wrap { min-height: 0; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr) auto; overflow: hidden; }
 .history-chart-scroll-window { min-height: 0; overflow-y: hidden; overflow-x: hidden; }
-.history-chart-wrap.recent .history-chart-scroll-window { overflow-x: auto; padding-bottom: 6px; }
+.history-chart-wrap.recent .history-chart-scroll-window { overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.26) rgba(255,255,255,0.05); }
+.history-chart-wrap.recent .history-chart-scroll-window::-webkit-scrollbar { height: 8px; }
+.history-chart-wrap.recent .history-chart-scroll-window::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 999px; }
+.history-chart-wrap.recent .history-chart-scroll-window::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.24); border-radius: 999px; }
+.history-chart-wrap.recent .history-chart-scroll-window::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.36); }
 .history-chart { width: 100%; height: 100%; min-height: 0; display: block; border-radius: var(--radius-md); background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)); border: 1px solid rgba(255,255,255,0.06); }
 .history-chart-wrap.recent .history-chart { width: auto; max-width: none; }
 .chart-axis { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
@@ -501,6 +448,11 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
 .history-match-meta { text-align: right; flex: 0 0 auto; }
 .history-match-meta span:first-child { color: var(--text-primary); font-weight: 900; font-size: 0.9rem; }
 .history-playstyle-row strong { font-size: 0.98rem; font-weight: 900; }
+.history-result-grid, .history-playstyle-list { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.26) rgba(255,255,255,0.05); }
+.history-result-grid::-webkit-scrollbar, .history-playstyle-list::-webkit-scrollbar { width: 7px; }
+.history-result-grid::-webkit-scrollbar-track, .history-playstyle-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 999px; }
+.history-result-grid::-webkit-scrollbar-thumb, .history-playstyle-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.24); border-radius: 999px; }
+.history-result-grid::-webkit-scrollbar-thumb:hover, .history-playstyle-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.36); }
 
 /* =========================================================================
    SETTINGS & SLIDERS
@@ -1136,30 +1088,8 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
         grid-template-columns: 1fr;
     }
 
-    /* The sidebar becomes a drawer opened by the burger in the topbar */
-    .nav-toggle {
-        display: inline-flex;
-    }
-
     .sidebar {
-        position: fixed;
-        top: 0;
-        bottom: 0;
-        left: 0;
-        z-index: 50;
-        width: min(280px, 84vw);
-        transform: translateX(-100%);
-        transition: transform 0.28s ease;
-        box-shadow: 24px 0 60px rgba(0, 0, 0, 0.6);
-    }
-
-    .app-layout.nav-open .sidebar {
-        transform: none;
-    }
-
-    .app-layout.nav-open .nav-backdrop {
-        opacity: 1;
-        pointer-events: auto;
+        display: none;
     }
 
     .topbar,

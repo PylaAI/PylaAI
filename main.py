@@ -1,5 +1,3 @@
-import _thread
-import argparse
 import inspect
 import os
 import sys
@@ -28,37 +26,6 @@ if __name__ == "__main__" and len(sys.argv) >= 9 and sys.argv[1] == "--debug-vie
         record_clips=(len(sys.argv) >= 11 and sys.argv[10] == "1"),
     )
     sys.exit(0)
-
-from desktop import console_log_path, hide_console, open_app_window
-
-
-def parse_cli_args(argv=None):
-    parser = argparse.ArgumentParser(
-        prog="PylaAI",
-        description="PylaAI, the best free and open source brawl stars bot.",
-    )
-    parser.add_argument(
-        "--no-console",
-        action="store_true",
-        help="Hide the console window and write its output to a log file. The console is shown by default.",
-    )
-    parser.add_argument(
-        "--no-webapp",
-        action="store_true",
-        help="Open the UI in the default browser instead of the Pyla desktop window.",
-    )
-    args, _unknown_args = parser.parse_known_args(argv)
-    return args
-
-
-# Parsed before the heavy imports below so --no-console takes effect right away.
-CLI_ARGS = parse_cli_args(sys.argv[1:] if __name__ == "__main__" else [])
-
-CONSOLE_HIDDEN = CLI_ARGS.no_console and hide_console()
-
-if CLI_ARGS.no_console and not CONSOLE_HIDDEN:
-    print("--no-console ignored: this console belongs to the terminal Pyla was started from, "
-          "so output stays here. Start Pyla without a terminal to hide it.")
 
 from adbutils import AdbError
 import socket
@@ -447,22 +414,6 @@ def open_browser_later(local_url):
     threading.Thread(target=_open, daemon=True, name="pyla-browser-launcher").start()
 
 
-def stop_on_window_close(app):
-    """Closing the Pyla window shuts Pyla down, the way a desktop app does."""
-    def _on_close():
-        print("Pyla window closed, shutting down.")
-        try:
-            app.config["runtime_manager"].stop()
-        except Exception as e:
-            print(f"Could not stop the bot cleanly: {e}")
-        # Unblocks app.run() so the regular shutdown runs (atexit, scrcpy cleanup).
-        _thread.interrupt_main()
-        time.sleep(10)
-        os._exit(0)
-
-    return _on_close
-
-
 if __name__ == "__main__":
     print("Starting PylaAI, the best free and open source brawl stars bot")
     print("The only official discord is", get_discord_link())
@@ -470,12 +421,5 @@ if __name__ == "__main__":
     app = create_app(pyla_main, start_discord_bot=True)
     local_url = f"http://127.0.0.1:{port}"
     print(f"Starting Pyla web UI at {local_url}")
-    if CONSOLE_HIDDEN:
-        print(f"Console output is written to {console_log_path()}")
-    if CLI_ARGS.no_webapp:
-        if CONSOLE_HIDDEN:
-            print("Closing the browser tab will not stop Pyla, it keeps running in the background.")
-        open_browser_later(local_url)
-    else:
-        open_app_window(local_url, on_close=stop_on_window_close(app))
+    open_browser_later(local_url)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

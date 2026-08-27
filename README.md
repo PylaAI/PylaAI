@@ -47,21 +47,6 @@ Run the bot:
 python main.py
 ```
 
-Pyla opens in its own desktop window (an installed Edge / Chrome / Brave is used as the window host, without any browser UI), so it behaves like a regular Windows application: Pyla colored title bar, own taskbar entry, and closing the window shuts Pyla down.
-
-### Startup options
-
-| Flag | Effect |
-| --- | --- |
-| *(none)* | Console visible, UI in the Pyla desktop window |
-| `--no-console` | Hides the console window, output goes to `%LOCALAPPDATA%\PylaAI\pyla.log`. Ignored when Pyla is started from an existing terminal, so your own terminal is never hidden. |
-| `--no-webapp` | Opens the UI in the default browser instead of the desktop window |
-
-Set `PYLA_WEBAPP_BROWSER` to a browser executable to pick which one hosts the window.
-
-> [!NOTE]
-> When compiling with Nuitka, keep the default console mode (`--windows-console-mode=force`): the console is hidden at runtime by `--no-console`, so it has to exist in the first place. Everything the desktop window needs is in `desktop.py`, which only uses the standard library and `ctypes`.
-
 
 ## License
 

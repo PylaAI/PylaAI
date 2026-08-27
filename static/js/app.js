@@ -187,42 +187,11 @@ function renderNav() {
     `).join("");
 }
 
-// Above this width the sidebar is docked and the drawer must stay out of the way.
-const DOCKED_SIDEBAR_QUERY = window.matchMedia("(min-width: 981px)");
-
-function setNavOpen(open) {
-    const isOpen = open && !DOCKED_SIDEBAR_QUERY.matches;
-    document.querySelector(".app-layout")?.classList.toggle("nav-open", isOpen);
-    document.getElementById("navToggle")?.setAttribute("aria-expanded", String(isOpen));
-}
-
-function bindNavDrawer() {
-    const toggle = document.getElementById("navToggle");
-    if (!toggle) return;
-
-    toggle.innerHTML = iconMarkup("menu");
-    toggle.addEventListener("click", () => {
-        setNavOpen(!document.querySelector(".app-layout").classList.contains("nav-open"));
-    });
-
-    document.getElementById("navBackdrop")?.addEventListener("click", () => setNavOpen(false));
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") setNavOpen(false);
-    });
-    // Back on a wide screen the sidebar is docked again, so drop the drawer state.
-    DOCKED_SIDEBAR_QUERY.addEventListener("change", (event) => {
-        if (event.matches) setNavOpen(false);
-    });
-}
-
 function bindShellEvents() {
-    bindNavDrawer();
-
     document.addEventListener("click", (event) => {
         const navButton = event.target.closest("[data-view]");
         if (navButton) {
             setView(navButton.dataset.view);
-            setNavOpen(false);
         }
 
         const lockedAction = event.target.closest(".ea-locked-action");
@@ -2324,7 +2293,6 @@ function iconMarkup(name) {
         close:      `<svg ${S}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
         logs:       `<svg ${S}><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></svg>`,
         copy:       `<svg ${S}><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
-        menu:       `<svg ${S}><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>`,
     };
 
     return icons[name] || "";
