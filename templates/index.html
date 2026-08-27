@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Dark browser UI (scrollbars, form controls) to match the Pyla desktop window -->
+    <meta name="theme-color" content="#0a0b0e">
+    <meta name="color-scheme" content="dark">
+    <title>PylaAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/api/assets/support/logo.png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+</head>
+<body>
+    <div id="vfx-bg"></div>
+
+    <div class="app-layout">
+        <aside id="sidebar" class="sidebar">
+            <div class="brand">
+                <img class="brand-logo" src="/api/assets/support/logo.png" alt="PylaAI logo">
+                <div class="brand-copy">
+                    <h1 class="brand-title">PylaAI</h1>
+                </div>
+            </div>
+
+            <nav class="nav-menu"></nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <span id="sidebarIndicator" class="status-indicator"></span>
+                    <div class="status-text">
+                        <span id="sidebarVersion">PylaAI</span>
+                        <span id="sidebarStatus">Preparing local session...</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="topbar-lead">
+                    <button id="navToggle" class="nav-toggle" type="button"
+                            aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"></button>
+                    <h2 id="pageTitle" class="page-title">Dashboard</h2>
+                </div>
+
+                <div class="header-actions">
+                    <span id="runtimeStatusPill" class="badge badge-outline">Idle</span>
+                    <span id="authStatusPill" class="badge badge-outline">Offline</span>
+                </div>
+            </header>
+
+            <div id="alertStack" class="alerts-container"></div>
+
+            <div class="views-wrapper">
+                <section id="view-dashboard" class="view active"></section>
+                <section id="view-queue" class="view"></section>
+                <section id="view-playstyles" class="view"></section>
+                <section id="view-history" class="view"></section>
+                <section id="view-settings" class="view"></section>
+            </div>
+
+            <div id="queueDock" class="queue-dock hidden"></div>
+        </main>
+
+        <div id="navBackdrop" class="nav-backdrop" aria-hidden="true"></div>
+    </div>
+
+    <div id="authModal" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <p class="eyebrow">Authentication Required</p>
+                <h3>Enter your Pyla API key</h3>
+                <p id="authInstructions">Use <code>/generate_key</code> if you bought via Patreon, or <code>/refresh_key</code> if you bought a temporary key, with PylaBot in Discord, then paste the key here. Your key is handled by Python only and is not rendered back into the UI.</p>            </div>
+
+            <form id="authForm" class="modal-form">
+                <label class="input-group">
+                    <span>API Key</span>
+                    <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste your key">
+                </label>
+                <div id="authMessage" class="auth-message hidden"></div>
+                <button id="authSubmitBtn" class="btn btn-primary w-full" type="submit">Unlock UI</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="tooltip" class="tooltip hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
