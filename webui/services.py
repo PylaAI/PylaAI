@@ -94,7 +94,7 @@ class WebDataService:
         "player_tag": ("str", ""),
         "default_trophy_target": ("int", 1000),
         "play_order": ("play_order", "in_order"),
-        "max_ips": ("auto_int", "auto"),
+        "max_fps": ("auto_int", "auto"),
         "used_threads": ("auto_int", "auto"),
         "ocr_scale_down_factor": ("float", 0.8),
         "brawl_stars_package": ("str", "com.supercell.brawlstars"),

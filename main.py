@@ -100,12 +100,12 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
         def __init__(self):
             current_playstyle = load_toml_as_dict("cfg/bot_config.toml").get("current_playstyle", "default_up.pyla")
             try:
-                self.max_ips = int(load_toml_as_dict("cfg/general_config.toml")['max_ips'])
+                self.max_fps = int(load_toml_as_dict("cfg/general_config.toml")['max_fps'])
             except ValueError:
-                self.max_ips = None
+                self.max_fps = None
 
-            if self.max_ips:
-                self.window_controller = WindowController(self.max_ips)
+            if self.max_fps:
+                self.window_controller = WindowController(self.max_fps)
             else:
                 self.window_controller = WindowController()
             data = clean_queue(queue_data)
@@ -365,7 +365,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                     else:
                         self.picked_first_brawler = True
                 t_now = time.time()
-                if self.max_ips:
+                if self.max_fps:
                     frame_start = time.perf_counter()
 
                 if self.run_for_minutes > 0 and not self.in_cooldown:
@@ -384,7 +384,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 if abs(s_time - t_now) > 1:
                     elapsed = t_now - s_time
                     if elapsed > 0:
-                        print(f"{c / elapsed:.2f} IPS")
+                        print(f"{c / elapsed:.2f} FPS")
                     s_time = t_now
                     c = 0
                 self.check_and_handle_brawl_stars_crash()
@@ -413,8 +413,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 self.Play.main(frame, brawler, self)
                 c += 1
 
-                if self.max_ips:
-                    target_period = 1 / self.max_ips
+                if self.max_fps:
+                    target_period = 1 / self.max_fps
                     work_time = time.perf_counter() - frame_start
                     if work_time < target_period:
                         time.sleep(target_period - work_time)

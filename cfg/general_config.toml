@@ -1,5 +1,5 @@
 cpu_or_gpu = "auto"
-max_ips = "auto"
+max_fps = "auto"
 trophies_multiplier = 1
 run_for_minutes = 0
 emulator_port = 5037
