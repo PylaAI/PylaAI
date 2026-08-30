@@ -62,7 +62,6 @@ def check_base_requirements(req_list):
             "onnxruntime_directml": "onnxruntime",
             "pycryptodome": "Crypto",
             "flask": "flask",
-            "pandas": "pandas",
         }
         import_name = mapping.get(pkg_name, pkg_name)
 
@@ -107,7 +106,6 @@ install_requires = [
     "av~=12.3",
     "Flask~=3.1",
     "pycryptodome~=3.21",
-    "pandas~=3.0",
     "pywebview~=6.2.1"
 ]
 
