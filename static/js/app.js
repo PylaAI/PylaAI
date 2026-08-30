@@ -124,6 +124,8 @@ const SETTINGS_META = {
         { key: "debug_view_fps", label: "Debug View FPS", type: "number", help: "Maximum FPS for the debug window. Lower this if it costs too much performance." },
         { key: "advanced_debug_visuals", label: "Advanced Debug Visuals", type: "checkbox", visibleIf: { key: "debug_view", value: true }, help: "Show hit circles, line-of-sight links, and joystick path sectors in the debug window." },
         { key: "record_debug_preview_clips", label: "Record Debug Preview As Clips", type: "checkbox", visibleIf: { key: "debug_view", value: true }, help: "Save MP4 clips of the debug preview when the player is tracked and then lost." },
+        { key: "collect_ocr_dataset", label: "Collect OCR Dataset", type: "checkbox", help: "Save brawler-selection screenshots and EasyOCR metadata for training a lightweight replacement model." },
+        { key: "full_ocr_dataset_scan", label: "Full OCR Dataset Scan", type: "checkbox", visibleIf: { key: "collect_ocr_dataset", value: true }, help: "Scan the entire brawler list without selecting a brawler, then stop the runtime automatically." },
     ],
     bot: [
         { key: "play_again_on_win", label: "Play Again On Win", type: "checkbox", help: "Chain another match immediately after a win." },

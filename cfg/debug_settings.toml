@@ -5,3 +5,5 @@ debug_view = false
 debug_view_fps = 15
 advanced_debug_visuals = false
 record_debug_preview_clips = false
+collect_ocr_dataset = false
+full_ocr_dataset_scan = false

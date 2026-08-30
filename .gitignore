@@ -4,6 +4,7 @@
 latest_brawler_data.json
 test.py
 debug_frames/
+ocr_dataset/
 venv/
 /dist
 /build

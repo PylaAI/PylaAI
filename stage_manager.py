@@ -164,6 +164,14 @@ class StageManager:
                     select_brawler = self.Lobby_automation.select_brawler(next_brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
                 if select_brawler == "aborted" or select_brawler == "stuck":
                     return
+                if select_brawler == "locked":
+                    print("Automatic brawler selection paused because the requested brawler is locked.")
+                    return
+                if select_brawler == "dataset_complete":
+                    print("OCR dataset scan completed. Stopping before selecting another brawler.")
+                    if self.runtime_control:
+                        self.runtime_control.request_stop()
+                    return
                 if select_brawler == "success":
                     self.Trophy_observer.change_trophies(self.brawlers_pick_data[0]['trophies'])
                     self.Trophy_observer.current_wins = self.brawlers_pick_data[0]['wins'] if self.brawlers_pick_data[0]['wins'] != "" else 0

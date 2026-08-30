@@ -1,16 +1,6 @@
 import argparse
-import inspect
 import os
 import sys
-
-# Monkey-patch inspect.getfile to prevent Nuitka + PyTorch crash
-_original_getfile = inspect.getfile
-def _patched_getfile(obj):
-    res = _original_getfile(obj)
-    return res if res is not None else "<unknown_nuitka_file>"
-
-inspect.getfile = _patched_getfile
-
 
 if __name__ == "__main__" and len(sys.argv) >= 9 and sys.argv[1] == "--debug-viewer-worker":
     from debug_view import DEFAULT_DEBUG_VIEW_FPS, run_viewer_worker
@@ -363,6 +353,15 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
 
                         if select_brawler == "aborted" or select_brawler == "stuck":
                             continue
+                        if select_brawler == "locked":
+                            print("Automatic brawler selection paused because the requested brawler is locked.")
+                            continue
+                        if select_brawler == "dataset_complete":
+                            print("OCR dataset scan completed. Stopping PylaAI without starting a match.")
+                            if self.runtime_control:
+                                self.runtime_control.request_stop()
+                            self.stop_gracefully()
+                            break
                         self.picked_first_brawler = True
                         self.update_trophy_observer()
                     else:

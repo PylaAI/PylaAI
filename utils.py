@@ -4,8 +4,6 @@ import io
 import math
 import os
 import random
-import ssl
-import threading
 import time
 from io import BytesIO
 import ctypes
@@ -18,6 +16,8 @@ import cv2
 from packaging import version
 import traceback
 
+from brawler_name_recognizer import BrawlerNameRecognizer
+
 try:
     from early_access.early_access import get_brawler_stats, get_player_info
     early_access = True
@@ -29,67 +29,18 @@ except (ImportError, ModuleNotFoundError):
         return None
     early_access = False
 
-def extract_text_and_positions(image_path):
-    results = reader.readtext(image_path)
-    text_details = {}
-    for (bbox, text, prob) in results:
-        top_left, top_right, bottom_right, bottom_left = bbox
-        cx = (top_left[0] + top_right[0] + bottom_right[0] + bottom_left[0]) / 4
-        cy = (top_left[1] + top_right[1] + bottom_right[1] + bottom_left[1]) / 4
-        center = (cx, cy)
-        formatted_bbox = {
-            'top_left': top_left,
-            'top_right': top_right,
-            'bottom_right': bottom_right,
-            'bottom_left': bottom_left,
-            'center': center
-        }
-
-        text_details[text.lower()] = formatted_bbox
-
-    return text_details
+_brawler_name_recognizer = None
 
 
-class DefaultEasyOCR:
-    REQUIRED_MODELS = ("craft_mlt_25k.pth", "english_g2.pth")
-
-    def __init__(self):
-        self.reader = None
-        self.lock = threading.Lock()
-
-    def readtext(self, image_input):
-        if self.reader is None:
-            with self.lock:
-                if self.reader is None:
-                    self.reader = self.create_reader()
-        return self.reader.readtext(image_input)
-
-    def create_reader(self):
-        model_dir = resolve_project_path("models", "easyocr")
-        self.validate_model_directory(model_dir)
-        try:
-            import easyocr
-            try:
-                return easyocr.Reader(
-                    ['en'],
-                    model_storage_directory=str(model_dir),
-                    download_enabled=False,
-                    verbose=False,
-                    gpu=False
-                )
-            except Exception as exc:
-                raise EasyOCRInitializationError(f"EasyOCR failed to load bundled models from {model_dir}: {exc}") from exc
-        except ssl.SSLCertVerificationError:
-            raise EasyOCRInitializationError("EasyOCR initialization failed due to SSL certificate verification error. To fix this, please check https://discord.com/channels/1205263029269438574/1227618442073342002/1499330873538117703 for a solution.")
-
-    def validate_model_directory(self, model_dir):
-        missing = [filename for filename in self.REQUIRED_MODELS if not (model_dir / filename).exists()]
-        if missing:
-            raise EasyOCRInitializationError(f"Missing EasyOCR model file(s) in {model_dir}: {', '.join(missing)}")
-
-
-class EasyOCRInitializationError(RuntimeError):
-    pass
+def extract_text_and_positions(image):
+    global _brawler_name_recognizer
+    if _brawler_name_recognizer is None:
+        _brawler_name_recognizer = BrawlerNameRecognizer(
+            resolve_project_path("models", "brawlerNameClassifier.onnx"),
+            resolve_project_path("models", "brawlerNameClassifier_labels.json"),
+            confidence_threshold=0.50,
+        )
+    return _brawler_name_recognizer.recognize(image)
 
 
 def _get_project_root():
@@ -132,7 +83,6 @@ def save_dict_as_toml(data, file_path):
     cached_toml[str(full_path)] = data
 
 
-reader = DefaultEasyOCR()
 try:
     from early_access.early_access import OFFICIAL_API
     default_api = OFFICIAL_API

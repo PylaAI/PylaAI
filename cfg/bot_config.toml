@@ -12,4 +12,4 @@ wall_detection_confidence = 0.5
 entity_detection_confidence = 0.65
 seconds_to_hold_attack_after_reaching_max = 1.5
 play_again_on_win = "no"
-current_playstyle = "universal_smart_v5_Slarckvul_Eddition.pyla"
+current_playstyle = "follower.pyla"
