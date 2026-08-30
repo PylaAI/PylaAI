@@ -139,6 +139,7 @@ class WebDataService:
     }
 
     WEBHOOK_FIELDS: dict[str, tuple[str, Any]] = {
+        "discord_bot_enabled": ("bool", False),
         "webhook_url": ("str", ""),
         "discord_id": ("str", ""),
         "discord_bot_token": ("str", ""),

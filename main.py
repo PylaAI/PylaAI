@@ -140,7 +140,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.cooldown_start_time = 0
             self.cooldown_duration = 3 * 60
             self.window_controller.screenshot()
-            discord_bot.set_window_controller(self.window_controller)
+            if discord_bot is not None:
+                discord_bot.set_window_controller(self.window_controller)
             self.start_state_checker()
             print("Initialization complete, starting main loop.")
             self.picked_first_brawler = False
@@ -177,7 +178,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 print("Shutting down.")
                 self.window_controller.release_movement()
                 self.window_controller.close()
-                discord_bot.set_window_controller(None)
+                if discord_bot is not None:
+                    discord_bot.set_window_controller(None)
                 sys.exit(1)
 
         def should_stop(self):
@@ -201,7 +203,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.stop_state_checker()
             self.window_controller.release_movement()
             self.window_controller.close()
-            discord_bot.set_window_controller(None)
+            if discord_bot is not None:
+                discord_bot.set_window_controller(None)
 
         def start_state_checker(self):
             if self.state_checker_thread and self.state_checker_thread.is_alive():
