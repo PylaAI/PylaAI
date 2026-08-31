@@ -41,12 +41,18 @@ def parse_cli_args(argv=None):
         action="store_true",
         help="Hide PylaAI's own console and write output to a log file.",
     )
-    parser.add_argument(
+    interface_group = parser.add_mutually_exclusive_group()
+    interface_group.add_argument(
         "--web",
         "--no-webapp",
         dest="force_web",
         action="store_true",
         help="Force the UI to open in the system browser instead of pywebview.",
+    )
+    interface_group.add_argument(
+        "--headless",
+        action="store_true",
+        help="Start the local web server without opening pywebview or a browser.",
     )
     args, _unknown_args = parser.parse_known_args(argv)
     return args
@@ -79,6 +85,18 @@ from utils import load_toml_as_dict, current_wall_model_is_latest, api_base_url,
 from utils import get_brawler_list, update_missing_brawlers_info, check_version, notify_user, update_wall_model_classes, get_latest_wall_model_file, cprint
 from window_controller import WindowController
 from webui import create_app
+
+INTERFACE_MODES = {"desktop", "browser", "headless"}
+
+
+def get_interface_mode(cli_args, configured_mode):
+    if cli_args.headless:
+        return "headless"
+    if cli_args.force_web:
+        return "browser"
+
+    normalized_mode = str(configured_mode or "desktop").strip().lower()
+    return normalized_mode if normalized_mode in INTERFACE_MODES else "desktop"
 
 
 def apply_play_order(queue_data):
@@ -471,9 +489,13 @@ if __name__ == "__main__":
     if CONSOLE_HIDDEN:
         print(f"Console output is written to {console_log_path()}")
 
+    interface_mode = get_interface_mode(
+        CLI_ARGS,
+        load_toml_as_dict("cfg/general_config.toml").get("interface_mode", "desktop"),
+    )
     webview_module = None
     webview_error = None
-    if not CLI_ARGS.force_web:
+    if interface_mode == "desktop":
         webview_module, webview_error = import_webview()
 
     if webview_module is not None:
@@ -484,9 +506,13 @@ if __name__ == "__main__":
             open_browser_later(local_url)
             app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
     else:
-        if webview_error is not None:
+        if interface_mode == "headless":
+            print("Headless mode enabled. No desktop window or browser will be opened.")
+            print(f"The web UI remains available manually at {local_url}")
+        elif webview_error is not None:
             print(f"pywebview is unavailable ({webview_error}); opening the system browser instead.")
-        elif CLI_ARGS.force_web:
-            print("Browser mode was forced with --web.")
-        open_browser_later(local_url)
+        else:
+            print("Browser interface mode enabled.")
+        if interface_mode != "headless":
+            open_browser_later(local_url)
         app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

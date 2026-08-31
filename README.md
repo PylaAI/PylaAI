@@ -53,7 +53,10 @@ python main.py
 | --- | --- |
 | *(none)* | Console visible, UI in the Pyla desktop window |
 | `--no-console` | Hides the console window, output goes to `%LOCALAPPDATA%\PylaAI\pyla.log`. Ignored when Pyla is started from an existing terminal, so your own terminal is never hidden. |
-| `--no-webapp` | Opens the UI in the default browser instead of the desktop window |
+| `--web` / `--no-webapp` | Opens the UI in the default browser instead of the desktop window. |
+| `--headless` | Starts the local server without loading the desktop window or opening a browser. The UI remains available at the local URL printed in the console. |
+
+The default startup interface can also be selected from **Settings → General → Interface Mode**. Changing it requires a full restart. Command-line flags override the saved setting for the current launch.
 
 
 ## License

@@ -86,12 +86,14 @@ logger = logging.getLogger(__name__)
 
 class WebDataService:
     PLAY_ORDER_VALUES = {"in_order", "lowest_to_highest", "highest_to_lowest"}
+    INTERFACE_MODE_VALUES = {"desktop", "browser", "headless"}
 
     GENERAL_FIELDS: dict[str, tuple[str, Any]] = {
         "run_for_minutes": ("int", 0),
         "player_tag": ("str", ""),
         "default_trophy_target": ("int", 1000),
         "play_order": ("play_order", "in_order"),
+        "interface_mode": ("interface_mode", "desktop"),
         "max_ips": ("auto_int", "auto"),
         "used_threads": ("auto_int", "auto"),
         "ocr_scale_down_factor": ("float", 0.8),
@@ -179,6 +181,9 @@ class WebDataService:
         if value_type == "play_order":
             value_str = str(value or "").strip().lower()
             return value_str if value_str in self.PLAY_ORDER_VALUES else "in_order"
+        if value_type == "interface_mode":
+            value_str = str(value or "").strip().lower()
+            return value_str if value_str in self.INTERFACE_MODE_VALUES else "desktop"
         return "" if value is None else str(value)
 
     def _serialize(self, value_type: str, value: Any):

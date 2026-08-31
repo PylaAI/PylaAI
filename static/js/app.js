@@ -108,6 +108,7 @@ const SETTINGS_META = {
         { key: "player_tag", label: "Player Tag", type: "text", placeholder: "#PLAYER", help: "Used to autofill live trophies and win streaks inside the brawler editor. Use your Brawl Stars player tag, not your Supercell ID." },
         { key: "default_trophy_target", label: "Default Trophy Target", type: "number", help: "Default trophy target used when adding a new brawler to the queue." },
         { key: "run_for_minutes", label: "Run Time", type: "number", suffix: "min", help: "How long Pyla runs before cooldown logic takes over." },
+        { key: "interface_mode", label: "Interface Mode", type: "select", options: [{ value: "desktop", label: "Integrated window" }, { value: "browser", label: "System browser" }, { value: "headless", label: "Headless" }], help: "Choose what Pyla opens at startup. Headless opens no window or browser, but the local web UI remains available. Requires a full restart." },
         { key: "max_ips", label: "Max IPS", type: "text", help: "Processing cap. Use auto if you want Pyla to manage it." },
         { key: "used_threads", label: "Threads", type: "text", help: "Worker thread count. Auto keeps the current behavior." },
         { key: "ocr_scale_down_factor", label: "OCR Scale", type: "number", step: "0.1", help: "Scale factor used before OCR work." },
