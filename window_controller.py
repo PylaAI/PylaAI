@@ -10,6 +10,7 @@ from debug_view import DebugViewPublisher
 from utils import config_bool, load_toml_as_dict, save_dict_as_toml, invalidate_toml_cache
 
 brawl_stars_width, brawl_stars_height = 1920, 1080
+SCRCPY_MAX_FPS = 60
 
 press_coords_dict = load_toml_as_dict("cfg/buttons_config.toml")
 KNOWN_BS_PACKAGES = ("com.supercell.brawlstars", "bsd.suitcase.release")
@@ -81,6 +82,16 @@ def discover_device(verbose: bool = False) -> AdbDevice:
     return chosen
 
 class WindowController:
+    def _create_scrcpy_client(self):
+        requested_fps = SCRCPY_MAX_FPS if self.max_ips == "auto" else int(self.max_ips)
+        stream_fps = max(1, min(requested_fps, SCRCPY_MAX_FPS))
+        return scrcpy.Client(
+            device=self.device,
+            max_width=0,
+            bitrate=4000000,
+            max_fps=stream_fps,
+        )
+
     def __init__(self, max_ips="auto"):
         self.scale_factor = None
         self.width = None
@@ -100,7 +111,7 @@ class WindowController:
 
             self.frame_lock = threading.Lock()
             self.max_ips = max_ips
-            self.scrcpy_client = scrcpy.Client(device=self.device, max_width=0, bitrate=4000000) if self.max_ips == "auto" else scrcpy.Client(device=self.device, max_width=0, bitrate=4000000, max_fps=self.max_ips)
+            self.scrcpy_client = self._create_scrcpy_client()
             self.last_frame = None
             self.last_frame_time = 0.0
             self.last_joystick_pos = (None, None)
@@ -180,7 +191,7 @@ class WindowController:
                         self.last_frame_time = time.time()
 
             try:
-                self.scrcpy_client = scrcpy.Client(device=self.device, max_width=0, bitrate=4000000) if self.max_ips == "auto" else scrcpy.Client(device=self.device, max_width=0, bitrate=4000000, max_fps=self.max_ips)
+                self.scrcpy_client = self._create_scrcpy_client()
                 self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, on_frame)
                 self.scrcpy_client.start(threaded=True)
             except Exception as e:

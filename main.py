@@ -80,6 +80,24 @@ from utils import get_brawler_list, update_missing_brawlers_info, check_version,
 from window_controller import WindowController
 from webui import create_app
 
+MAX_RUNTIME_IPS = 60
+AUTO_RUNTIME_IPS = {
+    "match": 60,
+    "match_making": 10,
+    "lobby": 5,
+}
+DEFAULT_AUTO_RUNTIME_IPS = 10
+PAUSED_RUNTIME_IPS = 1
+STATE_CHECKER_MAX_IPS = 10
+
+
+def get_runtime_ips(state, configured_max_ips=None, paused=False):
+    if paused:
+        return PAUSED_RUNTIME_IPS
+    if configured_max_ips is not None:
+        return max(1, min(configured_max_ips, MAX_RUNTIME_IPS))
+    return AUTO_RUNTIME_IPS.get(state, DEFAULT_AUTO_RUNTIME_IPS)
+
 
 def apply_play_order(queue_data):
     play_order = str(load_toml_as_dict("cfg/general_config.toml").get("play_order", "in_order")).strip().lower()
@@ -100,8 +118,9 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
         def __init__(self):
             current_playstyle = load_toml_as_dict("cfg/bot_config.toml").get("current_playstyle", "default_up.pyla")
             try:
-                self.max_ips = int(load_toml_as_dict("cfg/general_config.toml")['max_ips'])
-            except ValueError:
+                configured_max_ips = int(load_toml_as_dict("cfg/general_config.toml")['max_ips'])
+                self.max_ips = max(1, min(configured_max_ips, MAX_RUNTIME_IPS))
+            except (TypeError, ValueError):
                 self.max_ips = None
 
             if self.max_ips:
@@ -227,6 +246,16 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             with self.state_lock:
                 return self.state
 
+        def get_target_ips(self):
+            return get_runtime_ips(
+                self.get_latest_state(),
+                configured_max_ips=self.max_ips,
+                paused=self.should_pause(),
+            )
+
+        def get_state_checker_ips(self):
+            return min(self.get_target_ips(), STATE_CHECKER_MAX_IPS)
+
         def handle_detected_state(self, state):
             if state is None:
                 return
@@ -241,6 +270,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
         def state_checker_loop(self):
             last_checked_frame_time = 0.0
             while not self.state_checker_stop_event.is_set():
+                check_started_at = time.perf_counter()
                 frame, frame_time = self.window_controller.get_latest_frame()
                 if frame is None or frame_time <= last_checked_frame_time:
                     self.state_checker_stop_event.wait(0.01)
@@ -252,6 +282,11 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 except Exception as e:
                     print(f"State checker failed: {e}")
                     self.state_checker_stop_event.wait(0.1)
+
+                target_period = 1 / self.get_state_checker_ips()
+                work_time = time.perf_counter() - check_started_at
+                if work_time < target_period:
+                    self.state_checker_stop_event.wait(target_period - work_time)
 
         def wait_while_paused(self):
             if not self.runtime_control:
@@ -365,8 +400,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                     else:
                         self.picked_first_brawler = True
                 t_now = time.time()
-                if self.max_ips:
-                    frame_start = time.perf_counter()
+                frame_start = time.perf_counter()
 
                 if self.run_for_minutes > 0 and not self.in_cooldown:
                     elapsed_time = (t_now - self.start_time) / 60
@@ -413,11 +447,10 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 self.Play.main(frame, brawler, self)
                 c += 1
 
-                if self.max_ips:
-                    target_period = 1 / self.max_ips
-                    work_time = time.perf_counter() - frame_start
-                    if work_time < target_period:
-                        time.sleep(target_period - work_time)
+                target_period = 1 / self.get_target_ips()
+                work_time = time.perf_counter() - frame_start
+                if work_time < target_period:
+                    time.sleep(target_period - work_time)
 
     os.makedirs("debug_frames", exist_ok=True)
     main = Main()

@@ -108,7 +108,7 @@ const SETTINGS_META = {
         { key: "player_tag", label: "Player Tag", type: "text", placeholder: "#PLAYER", help: "Used to autofill live trophies and win streaks inside the brawler editor. Use your Brawl Stars player tag, not your Supercell ID." },
         { key: "default_trophy_target", label: "Default Trophy Target", type: "number", help: "Default trophy target used when adding a new brawler to the queue." },
         { key: "run_for_minutes", label: "Run Time", type: "number", suffix: "min", help: "How long Pyla runs before cooldown logic takes over." },
-        { key: "max_ips", label: "Max IPS", type: "text", help: "Processing cap. Use auto if you want Pyla to manage it." },
+        { key: "max_ips", label: "Max IPS (1-60)", type: "text", help: "Maximum processing rate. Auto uses 5 IPS in the lobby, 10 during matchmaking, and up to 60 in a match." },
         { key: "used_threads", label: "Threads", type: "text", help: "Worker thread count. Auto keeps the current behavior." },
         { key: "ocr_scale_down_factor", label: "OCR Scale", type: "number", step: "0.1", help: "Scale factor used before OCR work." },
         { key: "trophies_multiplier", label: "Trophies Multiplier", type: "number", help: "Useful for custom arenas or multiplier-based modes." },
