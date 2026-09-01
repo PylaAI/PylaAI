@@ -1,6 +1,6 @@
 [template_matching]
 powerpoint = [1000, 5, 80, 80]
-brawler_menu_heart = [1470, 0, 430, 140]
+brawler_menu_heart = [1050, 0, 500, 110]
 close_popup = [1740, 140, 140, 100]
 lobby_menu = [1790, 20, 75, 65]
 brawl_pass_house = [1750, 0, 169, 100]
