@@ -13,6 +13,9 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
+PIXEL_SCALE = np.float32(1.0 / 255.0)
+PADDING_VALUE = float(128.0 / 255.0)
+
 
 def _numpy_nms(boxes, scores, iou_threshold=0.6):
     if len(boxes) == 0:
@@ -168,9 +171,12 @@ class Detect:
         self.input_name = self.model.get_inputs()[0].name
         self._padded_img_buffer = np.full(
             (1, 3, self.input_size[0], self.input_size[1]),
-            128.0 / 255.0,
+            PADDING_VALUE,
             dtype=np.float32
         )
+        self._resized_img_buffer = None
+        self._resized_img_buffer_key = None
+        self._padded_content_shape = None
 
     def load_model(self):
         available_providers = ort.get_available_providers()
@@ -205,18 +211,33 @@ class Detect:
         new_w = int(w * scale)
         new_h = int(h * scale)
 
+        buffer_key = (new_h, new_w, img.shape[2], img.dtype.str)
+        if self._resized_img_buffer_key != buffer_key:
+            self._resized_img_buffer = np.empty(
+                (new_h, new_w, img.shape[2]),
+                dtype=img.dtype,
+            )
+            self._resized_img_buffer_key = buffer_key
+
         resized_img = cv2.resize(
             img,
             (new_w, new_h),
+            dst=self._resized_img_buffer,
             interpolation=cv2.INTER_LINEAR
         )
 
-        img_float = resized_img.astype(np.float32, copy=True)
-        np.multiply(img_float, 1.0 / 255.0, out=img_float)
+        resized_shape = (new_h, new_w)
+        if self._padded_content_shape != resized_shape:
+            self._padded_img_buffer.fill(PADDING_VALUE)
+            self._padded_content_shape = resized_shape
 
-        self._padded_img_buffer[0, 0, :new_h, :new_w] = img_float[:, :, 0]
-        self._padded_img_buffer[0, 1, :new_h, :new_w] = img_float[:, :, 1]
-        self._padded_img_buffer[0, 2, :new_h, :new_w] = img_float[:, :, 2]
+        for channel in range(3):
+            np.multiply(
+                resized_img[:, :, channel],
+                PIXEL_SCALE,
+                out=self._padded_img_buffer[0, channel, :new_h, :new_w],
+                casting="unsafe",
+            )
 
         return self._padded_img_buffer, new_w, new_h
 
