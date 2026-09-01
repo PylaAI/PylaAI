@@ -109,6 +109,8 @@ class WebDataService:
         "debug_view_fps": ("int", 30),
         "advanced_debug_visuals": ("bool", False),
         "record_debug_preview_clips": ("bool", False),
+        "collect_ocr_dataset": ("bool", False),
+        "full_ocr_dataset_scan": ("bool", False),
     }
 
     BOT_FIELDS: dict[str, tuple[str, Any]] = {
@@ -139,6 +141,7 @@ class WebDataService:
     }
 
     WEBHOOK_FIELDS: dict[str, tuple[str, Any]] = {
+        "discord_bot_enabled": ("bool", False),
         "webhook_url": ("str", ""),
         "discord_id": ("str", ""),
         "discord_bot_token": ("str", ""),
@@ -206,6 +209,8 @@ class WebDataService:
         if not self._deserialize("bool", config.get("debug_view", False)):
             config["advanced_debug_visuals"] = False
             config["record_debug_preview_clips"] = False
+        if not self._deserialize("bool", config.get("collect_ocr_dataset", False)):
+            config["full_ocr_dataset_scan"] = False
         return config
 
     def _load_config(self, path: str) -> dict[str, Any]:

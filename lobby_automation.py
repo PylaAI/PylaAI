@@ -1,11 +1,12 @@
+import json
 import time
 
 import cv2
+import numpy as np
 from utils import (
-    EasyOCRInitializationError,
     count_hsv_pixels,
     extract_text_and_positions,
-    load_toml_as_dict, load_all_brawlers_names, config_bool,
+    load_toml_as_dict, load_all_brawlers_names, config_bool, resolve_project_path,
 )
 
 
@@ -18,7 +19,80 @@ class LobbyAutomation:
         self.ocr_scale_up_factor = 1 / self.ocr_scale_down_factor
         self.all_brawlers_names = load_all_brawlers_names()
         self.window_controller = window_controller
-        self.verbose_debug = config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('verbose_debug'), False)
+        debug_settings = load_toml_as_dict("cfg/debug_settings.toml")
+        self.verbose_debug = config_bool(debug_settings.get('verbose_debug'), False)
+        self.collect_ocr_dataset = config_bool(debug_settings.get('collect_ocr_dataset'), False)
+        self.full_ocr_dataset_scan = self.collect_ocr_dataset and config_bool(
+            debug_settings.get('full_ocr_dataset_scan'), False
+        )
+
+    @staticmethod
+    def _dataset_scan_fingerprint(screenshot):
+        height, width = screenshot.shape[:2]
+        roster = screenshot[int(height * 0.08):int(height * 0.98), int(width * 0.07):int(width * 0.93)]
+        grayscale = cv2.cvtColor(roster, cv2.COLOR_RGB2GRAY)
+        reduced = cv2.resize(grayscale, (32, 32), interpolation=cv2.INTER_AREA)
+        return reduced > np.median(reduced)
+
+    @staticmethod
+    def _same_dataset_scan_screen(previous_fingerprint, current_fingerprint):
+        if previous_fingerprint is None:
+            return False
+        return float(np.mean(previous_fingerprint != current_fingerprint)) < 0.10
+
+    def _record_ocr_sample(self, screenshot, target_brawler, results, state, status, matched_name, attempt,
+                           source_size):
+        if not self.collect_ocr_dataset:
+            return
+
+        try:
+            dataset_dir = resolve_project_path("ocr_dataset")
+            images_dir = dataset_dir / "images"
+            metadata_dir = dataset_dir / "metadata"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            metadata_dir.mkdir(parents=True, exist_ok=True)
+
+            sample_id = f"{time.time_ns()}_{attempt:03d}"
+            image_name = f"{sample_id}.png"
+            image_path = images_dir / image_name
+            metadata_path = metadata_dir / f"{sample_id}.json"
+
+            image_bgr = cv2.cvtColor(screenshot, cv2.COLOR_RGB2BGR)
+            if not cv2.imwrite(str(image_path), image_bgr):
+                raise OSError(f"Could not write OCR dataset image to {image_path}")
+
+            detections = []
+            for normalized_text, details in results.items():
+                bbox = [
+                    [float(value) for value in details[corner]]
+                    for corner in ("top_left", "top_right", "bottom_right", "bottom_left")
+                ]
+                detections.append({
+                    "text": str(details.get("text", normalized_text)),
+                    "normalized_text": normalized_text,
+                    "confidence": float(details.get("confidence", 0.0)),
+                    "bbox": bbox,
+                })
+
+            metadata = {
+                "schema_version": 1,
+                "created_at_unix": time.time(),
+                "image": f"images/{image_name}",
+                "target_brawler": target_brawler,
+                "matched_name": matched_name,
+                "selection_status": status,
+                "screen_state": state,
+                "attempt": attempt,
+                "ocr_scale_down_factor": self.ocr_scale_down_factor,
+                "source_size": {"width": source_size[0], "height": source_size[1]},
+                "ocr_size": {"width": screenshot.shape[1], "height": screenshot.shape[0]},
+                "detections": detections,
+            }
+            with open(metadata_path, "w", encoding="utf-8") as metadata_file:
+                json.dump(metadata, metadata_file, ensure_ascii=False, indent=2)
+            print(f"Saved OCR dataset sample: {sample_id}")
+        except Exception as exc:
+            print(f"WARNING: Could not save OCR dataset sample: {exc}")
 
     def check_for_idle(self, frame):
         wr = self.window_controller.width_ratio
@@ -59,26 +133,26 @@ class LobbyAutomation:
         time.sleep(0.5)
         c = 0
         print("Automatic brawler selection started for", brawler)
-        shop_counter = 0
+        if self.full_ocr_dataset_scan:
+            print("Full OCR dataset scan enabled: no brawler will be selected.")
+        previous_scan_fingerprint = None
+        stable_scan_screens = 0
         for i in range(100):
             if self._should_interrupt(runtime_control, stop_event):
                 print("Brawler selection aborted by user.")
                 return "aborted"
             screenshot = self.window_controller.screenshot()
+            source_size = (screenshot.shape[1], screenshot.shape[0])
             screenshot = cv2.resize(screenshot, (int(screenshot.shape[1] * self.ocr_scale_down_factor), int(screenshot.shape[0] * self.ocr_scale_down_factor)), interpolation=cv2.INTER_AREA)
 
-            print("Extracting text on current screen...")
+            print("Recognizing brawlers on current screen...")
             try:
-                results = extract_text_and_positions(screenshot)
-            except EasyOCRInitializationError as exc:
-                raise RuntimeError(
-                    f"Automatic brawler selection could not start OCR: {exc}"
-                ) from exc
+                ocr_results = extract_text_and_positions(screenshot)
             except Exception as exc:
-                print(f"WARNING: Automatic brawler selection could not read this screen with OCR: {exc}")
+                print(f"WARNING: Automatic brawler selection could not recognize this screen: {exc}")
                 print("The bot will continue without changing the currently selected brawler.")
                 return "error"
-            results = {k: v for k, v in results.items() if len(k) >= 2}
+            results = {k: v for k, v in ocr_results.items() if len(k) >= 2}
             clean_results = {}
             for key in results.keys():
                 orig_key = key
@@ -87,16 +161,33 @@ class LobbyAutomation:
                 clean_results[key.lower()] = results[orig_key]
 
             current_state = get_latest_state()
-            if "shop" in clean_results.keys():
-                print("Latest screenshot is still of the lobby, waiting for the frame to update...")
-                shop_counter += 1
-                if shop_counter > 5:
-                    print("WARNING: The bot has been waiting for the lobby screen to update for a long time. It's possible that the game is stuck or the OCR is having trouble reading the screen. The bot will continue without changing the currently selected brawler.")
-                    return "stuck"
-                continue
-            elif current_state != "brawler_selection":
+            if current_state != "brawler_selection":
+                self._record_ocr_sample(screenshot, brawler, ocr_results, current_state, "unexpected_state", None,
+                                        i, source_size)
                 print("Latest screenshot is no longer of the lobby, aborting brawler selection...")
                 return "stuck"
+            elif self.full_ocr_dataset_scan:
+                self._record_ocr_sample(
+                    screenshot, brawler, ocr_results, current_state, "full_scan", None, i, source_size
+                )
+                current_fingerprint = self._dataset_scan_fingerprint(screenshot)
+                if self._same_dataset_scan_screen(previous_scan_fingerprint, current_fingerprint):
+                    stable_scan_screens += 1
+                else:
+                    stable_scan_screens = 0
+                previous_scan_fingerprint = current_fingerprint
+
+                if i >= 5 and stable_scan_screens >= 2:
+                    print("Full OCR dataset scan reached the bottom of the brawler list.")
+                    return "dataset_complete"
+
+                self.window_controller.swipe(
+                    int(1700 * wr), int(900 * hr), int(1700 * wr), int(600 * hr), duration=0.5
+                )
+                if self._sleep_interruptible(3, runtime_control, stop_event):
+                    print("OCR dataset scan aborted by user.")
+                    return "aborted"
+                continue
             elif brawler in clean_results.keys():
                 matched_key = brawler
             else:
@@ -107,6 +198,19 @@ class LobbyAutomation:
                         print(f"Matched detected name '{detected_name}' to brawler '{brawler}' using alias list.")
                         break
 
+            self._record_ocr_sample(
+                screenshot,
+                brawler,
+                ocr_results,
+                current_state,
+                "locked" if matched_key and clean_results[matched_key].get("locked") else (
+                    "matched" if matched_key else "not_found"
+                ),
+                matched_key,
+                i,
+                source_size,
+            )
+
             if self.verbose_debug:
                 print("OCR detected the following potential matches for the brawler name:")
                 import difflib
@@ -115,6 +219,14 @@ class LobbyAutomation:
                     if match_ratio >= 0.25:
                         print(f" - '{detected_name}' with match ratio {match_ratio:.2f}")
             if matched_key:
+                if clean_results[matched_key].get("locked"):
+                    print(
+                        f"WARNING: Brawler '{brawler}' was found but is not unlocked. "
+                        "Automatic selection has been paused."
+                    )
+                    if runtime_control:
+                        runtime_control.request_pause()
+                    return "locked"
                 x, y = clean_results[matched_key]['center']
                 y_offset = 50*self.ocr_scale_down_factor
                 y -= y_offset

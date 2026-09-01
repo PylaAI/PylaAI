@@ -6,8 +6,7 @@ import threading
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
-from discord_bot import DiscordBot
-from utils import get_brawler_icon_path, resolve_project_path
+from utils import config_bool, get_brawler_icon_path, load_toml_as_dict, resolve_project_path
 from .runtime import RuntimeManager
 from .services import WebDataService
 
@@ -57,6 +56,9 @@ def _configure_request_logging():
 
 def _start_discord_bot_thread(app: Flask):
     discord_bot = app.config["discord_bot"]
+    if discord_bot is None:
+        return
+
     with app.config["discord_bot_lock"]:
         discord_thread = app.config.get("discord_bot_thread")
         if discord_thread and discord_thread.is_alive():
@@ -71,6 +73,18 @@ def _start_discord_bot_thread(app: Flask):
         discord_thread.start()
 
 
+def _create_discord_bot(runtime_manager, data_service):
+    webhook_config = load_toml_as_dict("cfg/webhook_config.toml")
+    if not config_bool(webhook_config.get("discord_bot_enabled"), False):
+        return None
+
+    # Keep this import local: when Discord is disabled, discord.py and its
+    # dependencies must never enter the process.
+    from discord_bot import DiscordBot
+
+    return DiscordBot(runtime_manager, data_service)
+
+
 def create_app(pyla_main, start_discord_bot=False):
     app = Flask(
         __name__,
@@ -80,7 +94,7 @@ def create_app(pyla_main, start_discord_bot=False):
 
     runtime_manager = RuntimeManager(pyla_main)
     data_service = WebDataService(runtime_manager)
-    discord_bot = DiscordBot(runtime_manager, data_service)
+    discord_bot = _create_discord_bot(runtime_manager, data_service)
     runtime_manager.configure_start_gate(data_service.get_queue_data, data_service.get_auth_state)
     app.config["runtime_manager"] = runtime_manager
     app.config["data_service"] = data_service
@@ -247,7 +261,7 @@ def create_app(pyla_main, start_discord_bot=False):
             return ("", 404)
         return send_file(target)
 
-    if start_discord_bot:
+    if start_discord_bot and discord_bot is not None:
         _start_discord_bot_thread(app)
 
     return app

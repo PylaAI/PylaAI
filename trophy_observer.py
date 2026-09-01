@@ -1,11 +1,27 @@
+import csv
 import os
 import requests
 from utils import load_toml_as_dict, save_dict_as_toml, api_base_url, hash_playstyle, PYLA_VERSION, resolve_project_path
-import pandas as pd
 from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
+
+
+HISTORY_COLUMNS = [
+    "date_time",
+    "brawler_name",
+    "result",
+    "current_trophies",
+    "trophy_delta",
+    "new_winstreak",
+    "playstyle_hash",
+    "playstyle_name",
+    "playstyle_gamemodes",
+    "playstyle_brawlers",
+    "pyla_version",
+    "power_level",
+]
 
 
 class GameMode(Enum):
@@ -84,16 +100,15 @@ class TrophyObserver:
 
     def load_history(self):
         if os.path.exists(self.history_file):
-            history = pd.read_csv(self.history_file)
-        else:
-            history = pd.DataFrame(
-                columns=["date_time", "brawler_name", "result", "current_trophies", "trophy_delta", "new_winstreak",
-                         "playstyle_hash", "playstyle_name", "playstyle_gamemodes", "playstyle_brawlers",
-                         "pyla_version", "power_level"])
-        return history
+            with open(self.history_file, "r", encoding="utf-8", newline="") as history_file:
+                return list(csv.DictReader(history_file))
+        return []
 
     def save_history(self):
-        self.match_history.to_csv(self.history_file, index=False)
+        with open(self.history_file, "w", encoding="utf-8", newline="") as history_file:
+            writer = csv.DictWriter(history_file, fieldnames=HISTORY_COLUMNS)
+            writer.writeheader()
+            writer.writerows(self.match_history)
 
     def parse_game_result(self, raw_result: str) -> ParsedGameResult:
         """Parses raw game result string into a structured data class."""
@@ -171,13 +186,20 @@ class TrophyObserver:
         if self.current_wins:
             print(f"Current Wins: {self.current_wins}")
 
-        self.match_history.loc[len(self.match_history)] = [datetime.now().isoformat(), current_brawler,
-                                                           parsed_result.result.value, old_trophies, trophy_delta,
-                                                           self.win_streak, hash_playstyle(playstyle_info),
-                                                           playstyle_info["name"],
-                                                           "|".join(playstyle_info["gamemodes"]),
-                                                           "|".join(playstyle_info["brawlers"]), PYLA_VERSION,
-                                                           (power_level if power_level is not None else -1)]
+        self.match_history.append({
+            "date_time": datetime.now().isoformat(),
+            "brawler_name": current_brawler,
+            "result": parsed_result.result.value,
+            "current_trophies": old_trophies,
+            "trophy_delta": trophy_delta,
+            "new_winstreak": self.win_streak,
+            "playstyle_hash": hash_playstyle(playstyle_info),
+            "playstyle_name": playstyle_info["name"],
+            "playstyle_gamemodes": "|".join(playstyle_info["gamemodes"]),
+            "playstyle_brawlers": "|".join(playstyle_info["brawlers"]),
+            "pyla_version": PYLA_VERSION,
+            "power_level": power_level if power_level is not None else -1,
+        })
         self.match_counter += 1
         self.send_results_to_api()
         self.save_history()
@@ -192,10 +214,10 @@ class TrophyObserver:
         self.current_trophies = new
 
     def send_results_to_api(self):
-        new_matches = self.match_history.iloc[self.last_sent_index:]
-        if new_matches.empty:
+        new_matches = self.match_history[self.last_sent_index:]
+        if not new_matches:
             return
-        payload = new_matches.to_dict(orient="records")
+        payload = new_matches
         if api_base_url != "localhost":
             try:
                 response = requests.post(f'https://{api_base_url}/api/matches', json=payload)

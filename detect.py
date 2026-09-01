@@ -2,7 +2,6 @@ import os
 
 import cv2
 import numpy as np
-import torch
 import onnxruntime as ort
 from utils import load_toml_as_dict
 import warnings
@@ -158,7 +157,6 @@ class Detect:
 
         self.optimal_threads_amount = get_optimal_threads() if threads_to_use == "auto" else int(threads_to_use)
         cv2.setNumThreads(self.optimal_threads_amount)
-        torch.set_num_threads(self.optimal_threads_amount)
         self.preferred_device = load_toml_as_dict("cfg/general_config.toml")['cpu_or_gpu']
         self.model_path = model_path
         self.classes = classes

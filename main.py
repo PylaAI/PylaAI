@@ -1,16 +1,6 @@
 import argparse
-import inspect
 import os
 import sys
-
-# Monkey-patch inspect.getfile to prevent Nuitka + PyTorch crash
-_original_getfile = inspect.getfile
-def _patched_getfile(obj):
-    res = _original_getfile(obj)
-    return res if res is not None else "<unknown_nuitka_file>"
-
-inspect.getfile = _patched_getfile
-
 
 if __name__ == "__main__" and len(sys.argv) >= 9 and sys.argv[1] == "--debug-viewer-worker":
     from debug_view import DEFAULT_DEBUG_VIEW_FPS, run_viewer_worker
@@ -140,7 +130,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.cooldown_start_time = 0
             self.cooldown_duration = 3 * 60
             self.window_controller.screenshot()
-            discord_bot.set_window_controller(self.window_controller)
+            if discord_bot is not None:
+                discord_bot.set_window_controller(self.window_controller)
             self.start_state_checker()
             print("Initialization complete, starting main loop.")
             self.picked_first_brawler = False
@@ -177,7 +168,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 print("Shutting down.")
                 self.window_controller.release_movement()
                 self.window_controller.close()
-                discord_bot.set_window_controller(None)
+                if discord_bot is not None:
+                    discord_bot.set_window_controller(None)
                 sys.exit(1)
 
         def should_stop(self):
@@ -201,7 +193,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.stop_state_checker()
             self.window_controller.release_movement()
             self.window_controller.close()
-            discord_bot.set_window_controller(None)
+            if discord_bot is not None:
+                discord_bot.set_window_controller(None)
 
         def start_state_checker(self):
             if self.state_checker_thread and self.state_checker_thread.is_alive():
@@ -360,6 +353,15 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
 
                         if select_brawler == "aborted" or select_brawler == "stuck":
                             continue
+                        if select_brawler == "locked":
+                            print("Automatic brawler selection paused because the requested brawler is locked.")
+                            continue
+                        if select_brawler == "dataset_complete":
+                            print("OCR dataset scan completed. Stopping PylaAI without starting a match.")
+                            if self.runtime_control:
+                                self.runtime_control.request_stop()
+                            self.stop_gracefully()
+                            break
                         self.picked_first_brawler = True
                         self.update_trophy_observer()
                     else:
