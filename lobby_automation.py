@@ -133,17 +133,8 @@ class LobbyAutomation:
                 return "success"
             else:
                 print("Brawler name not found on screen, scrolling down to load more brawlers...")
-            if c == 0:
-                wr = self.window_controller.width_ratio
-                hr = self.window_controller.height_ratio
-                self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(850 * hr), duration=0.5)
-                if self._sleep_interruptible(3, runtime_control, stop_event):
-                    print("Brawler selection aborted by user.")
-                    return "aborted"
-                c += 1
-                continue
 
-            self.window_controller.swipe(int(1700 * wr), int(900 * hr), int(1700 * wr), int(650 * hr), duration=0.5)
+            self.window_controller.swipe(int(1100 * wr), int(1040 * hr), int(400 * wr), int(1040 * hr), duration=0.4)
             if self._sleep_interruptible(3, runtime_control, stop_event):
                 print("Brawler selection aborted by user.")
                 return "aborted"
