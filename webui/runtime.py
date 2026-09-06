@@ -1,8 +1,64 @@
 from __future__ import annotations
 
+import collections
+import re
+import sys
 import threading
-from typing import Any, Callable
+import time
 import traceback
+from typing import Any, Callable
+
+
+GLOBAL_LOGS = collections.deque(maxlen=2000)
+GLOBAL_LOGS_LOCK = threading.Lock()
+
+
+class ThreadFilterStream:
+    ANSI_CLEAN_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+    def __init__(self, original_stream, prefix_filter="pyla-", is_stderr=False):
+        self.original_stream = original_stream
+        self.prefix_filter = prefix_filter
+        self.is_stderr = is_stderr
+        self.thread_buffers: dict[str, list[str]] = {}
+
+    def write(self, text):
+        self.original_stream.write(text)
+        if not text:
+            return
+
+        thread_name = threading.current_thread().name
+        if not thread_name.startswith(self.prefix_filter):
+            return
+
+        with GLOBAL_LOGS_LOCK:
+            self.thread_buffers.setdefault(thread_name, []).append(text)
+            combined = "".join(self.thread_buffers[thread_name])
+            if "\n" not in combined:
+                return
+
+            lines = combined.split("\n")
+            self.thread_buffers[thread_name] = [lines[-1]]
+            for line in lines[:-1]:
+                log_line = self.ANSI_CLEAN_RE.sub("", line)
+                if self.is_stderr:
+                    log_line = f"[stderr] {log_line}"
+                GLOBAL_LOGS.append(log_line)
+
+    def flush(self):
+        self.original_stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.original_stream, name)
+
+
+if not getattr(sys.stdout, "_is_pyla_redirected", False):
+    sys.stdout = ThreadFilterStream(sys.stdout, prefix_filter="pyla-")
+    sys.stdout._is_pyla_redirected = True
+
+if not getattr(sys.stderr, "_is_pyla_redirected", False):
+    sys.stderr = ThreadFilterStream(sys.stderr, prefix_filter="pyla-", is_stderr=True)
+    sys.stderr._is_pyla_redirected = True
 
 
 class RuntimeControl:
@@ -42,8 +98,10 @@ class RuntimeManager:
         self._lock = threading.Lock()
         self._state = "idle"
         self._last_error = ""
+        self._session_started_at: float | None = None
         self.queue_provider: Callable[[], list[dict[str, Any]]] | None = None
         self._auth_provider: Callable[[], dict[str, Any]] | None = None
+
     def _set_state(self, state: str):
         with self._lock:
             self._state = state
@@ -63,10 +121,12 @@ class RuntimeManager:
                 self._state = "idle"
                 self._thread = None
                 self.rt_control = None
+                self._session_started_at = None
             return {
                 "state": self._state,
                 "is_running": thread_alive,
                 "last_error": self._last_error,
+                "session_started_at": self._session_started_at if thread_alive else None,
             }
 
     def start(self, queue_data: list[dict[str, Any]], discord_bot) -> dict[str, Any]:
@@ -84,6 +144,7 @@ class RuntimeManager:
             self.rt_control = RuntimeControl(self._set_state)
             self._state = "running"
             self._last_error = ""
+            self._session_started_at = time.time()
             self._thread = threading.Thread(
                 target=self._run_worker,
                 args=(queue_data, self.rt_control, discord_bot),
@@ -136,12 +197,13 @@ class RuntimeManager:
             with self._lock:
                 self._state = "error"
                 self._last_error = str(exc)
-                print(str(exc))
-                traceback.print_exc()
+            print(str(exc))
+            traceback.print_exc()
         finally:
             with self._lock:
                 self._thread = None
                 self.rt_control = None
+                self._session_started_at = None
 
     def pause(self) -> dict[str, Any]:
         with self._lock:
@@ -164,6 +226,7 @@ class RuntimeManager:
             thread_alive = self._thread.is_alive() if self._thread else False
             if not thread_alive or not self.rt_control:
                 self._state = "idle"
+                self._session_started_at = None
                 return {"ok": True, "message": "Pyla is already stopped."}
 
             thread = self._thread
@@ -178,6 +241,7 @@ class RuntimeManager:
                     stopped_state = self._state
                     self._thread = None
                     self.rt_control = None
+                    self._session_started_at = None
                     if self._state != "error":
                         self._state = "idle"
                         stopped_state = "idle"
@@ -186,3 +250,11 @@ class RuntimeManager:
                 return {"ok": True, "message": "Pyla stopped."}
 
         return {"ok": True, "message": "Stop requested. Pyla is shutting down."}
+
+    def get_logs(self) -> list[str]:
+        with GLOBAL_LOGS_LOCK:
+            return list(GLOBAL_LOGS)
+
+    def clear_logs(self):
+        with GLOBAL_LOGS_LOCK:
+            GLOBAL_LOGS.clear()

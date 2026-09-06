@@ -7,15 +7,6 @@ import discord
 from PIL import Image
 from utils import load_toml_as_dict
 from window_controller import WindowController
-try:
-    from early_access.early_access import register_early_access_commands
-    early_access = True
-except ImportError:
-    early_access = False
-    def register_early_access_commands(a):
-        pass
-
-
 TIMEOUT = 300
 
 
@@ -35,7 +26,6 @@ class DiscordBot:
         self.tree = app_commands.CommandTree(self.client)
         self.register_events()
         self.register_commands()
-        register_early_access_commands(self)
 
     def set_window_controller(self, window_controller):
         self.window_controller = window_controller
@@ -395,16 +385,15 @@ class DiscordBot:
                 "status": "Returns the current status of the bot",
                 "restart_brawl_stars": "Restarts Brawl Stars if the bot is running",
                 "view_queue": "View the current queue of the bot",
-                "add_to_queue": ("**Premium Only :**" if not early_access else "") + "Add a brawler to the queue (only works when the bot is not running)",
-                "remove_from_queue": ("**Premium Only :**" if not early_access else "") + "Remove a brawler from the queue (only works when the bot is not running)",
-                "clear_queue": ("**Premium Only :**" if not early_access else "") + "Clear the current queue (only works when the bot is not running)",
-                "push_all": ("**Premium Only :**" if not early_access else "") + "Add all brawlers below target trophies to the queue (only works when the bot is not running)",
-                "switch_player_tag": ("**Premium Only :**" if not early_access else "") + "Switch or view the player tag for the current instance (only works when the bot is not running)",
-                "activate_playstyle": ("**Premium Only Only :**" if not early_access else "") + "Activate a playstyle (only works when the bot is not running)",
+                "add_to_queue": "**Premium Only:** Add a brawler to the queue remotely.",
+                "remove_from_queue": "**Premium Only:** Remove a brawler from the queue remotely.",
+                "clear_queue": "**Premium Only:** Clear the current queue remotely.",
+                "push_all": "**Premium Only:** Add all brawlers below the target remotely.",
+                "switch_player_tag": "**Premium Only:** Switch the player profile remotely.",
+                "activate_playstyle": "**Premium Only:** Activate a playstyle remotely.",
             }
             message = "**Available commands:**\n" + "\n".join(f"- `{command}`: {description}" for command, description in commands.items())
-            if not early_access:
-                message += "\n\n**Unlock Premium:** Obtain the premium module to obtain access to additional features and commands. Check https://pyla-ai.angelfirela.dev/premium for more information."
+            message += "\n\n**Unlock Premium:** Visit https://pyla-ai.angelfirela.dev/premium for additional features and commands."
             await interaction.response.send_message(
                 message,
                 ephemeral=True

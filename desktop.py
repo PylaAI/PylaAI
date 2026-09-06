@@ -17,6 +17,14 @@ WINDOW_SIZE = (1440, 900)
 APP_ICON_PATH = Path(__file__).resolve().parent / "images" / "logo.ico"
 WINDOWS_APP_ID = "PylaAI.Desktop"
 _SW_HIDE = 0
+_BUNDLED_WEBVIEW_BINARIES = (
+    Path("pythonnet/runtime/Python.Runtime.dll"),
+    Path("clr_loader/ffi/dlls/amd64/ClrLoader.dll"),
+    Path("webview/lib/Microsoft.Web.WebView2.Core.dll"),
+    Path("webview/lib/Microsoft.Web.WebView2.WinForms.dll"),
+    Path("webview/lib/WebBrowserInterop.x64.dll"),
+    Path("webview/lib/runtimes/win-x64/native/WebView2Loader.dll"),
+)
 
 
 def console_log_path() -> Path:
@@ -83,8 +91,51 @@ def _redirect_standard_streams(log_path: Path) -> None:
     sys.stdin = open(0, "r", encoding="utf-8", errors="replace", closefd=False)
 
 
+def unblock_bundled_webview_binaries(base_dir: Path | None = None) -> list[Path]:
+    """Remove Internet-zone markers from the .NET files shipped with PylaAI.
+
+    Windows propagates the downloaded ZIP's ``Zone.Identifier`` stream to
+    extracted files.  The executable itself may still run, but .NET Framework
+    then refuses to load Python.Runtime.dll and clr_loader reports the rather
+    misleading "Failed to resolve ... Loader.Initialize" error.
+
+    Only PylaAI's explicitly listed pywebview/pythonnet binaries are touched.
+    Source checkouts normally have none of these files next to desktop.py, so
+    this is effectively a frozen-build startup repair.
+    """
+    if not IS_WINDOWS:
+        return []
+
+    bundle_dir = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent
+    unblocked: list[Path] = []
+    failures: list[tuple[Path, OSError]] = []
+
+    for relative_path in _BUNDLED_WEBVIEW_BINARIES:
+        binary_path = bundle_dir / relative_path
+        if not binary_path.is_file():
+            continue
+
+        zone_identifier = f"{binary_path}:Zone.Identifier"
+        try:
+            os.remove(zone_identifier)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            failures.append((binary_path, error))
+        else:
+            unblocked.append(binary_path)
+
+    if unblocked:
+        print(f"Removed Windows download blocking from {len(unblocked)} bundled UI file(s).")
+    for binary_path, error in failures:
+        print(f"Could not remove Windows download blocking from {binary_path}: {error}")
+
+    return unblocked
+
+
 def import_webview() -> tuple[Any | None, Exception | None]:
     """Return the optional pywebview module, or the reason it could not load."""
+    unblock_bundled_webview_binaries()
     try:
         return importlib.import_module("webview"), None
     except Exception as error:

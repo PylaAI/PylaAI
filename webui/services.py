@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import date, datetime
 import json
 import logging
 import shutil
 from pathlib import Path
 from typing import Any
-import requests
 from packaging import version
 from werkzeug.utils import secure_filename
 
@@ -16,6 +15,7 @@ from utils import (
     clean_queue,
     get_brawler_list,
     get_discord_link,
+    get_announcements,
     get_latest_version,
     get_playstyles_list,
     load_brawlers_info,
@@ -23,60 +23,18 @@ from utils import (
     load_pyla_script,
     load_toml_as_dict,
     normalize_brawler_filename,
+    resolve_playstyle_path,
     resolve_project_path,
-    save_dict_as_toml, PYLA_VERSION, api_update_brawler_data, clear_brawler_data, save_brawler_data,
+    save_dict_as_toml, PYLA_VERSION, DOWNLOAD_URL, api_update_brawler_data, clear_brawler_data, save_brawler_data,
     mask_secret,
 )
 
-try:
-    from early_access.early_access import (
-        get_brawler_stats,
-        get_player_info,
-        validate_login as validate_early_access_login,
-    )
-
-    early_access = True
-
-except (ImportError, ModuleNotFoundError):
-    def get_brawler_stats(_player_info, _brawler_name):
-        return None, None
-
-    def get_player_info(_tag):
-        return None
-
-    def validate_early_access_login(_api_key):
-        return {
-            "ok": False,
-            "authenticated": False,
-            "message": "Early access module is missing.",
-            "code": "EARLY_ACCESS_MODULE_MISSING",
-        }
-
-    early_access = False
+def get_brawler_stats(_player_info, _brawler_name):
+    return None, None
 
 
-def check_user_exists(username):
-    url = f'https://{api_base_url}/check_user'
-
-    params = {'username': username, "API-Key": "apikeyhaha"}
-    response = requests.get(url, params=params)
-
-    if response.status_code == 200:
-        data = response.json()
-        return data['exists']
-    else:
-        print(f"Error: Unable to check user. Status code: {response.status_code}")
-        return False
-
-
-def check_if_exists(username):
-    user_exists = check_user_exists(username)
-    if user_exists is not None:
-        print(f"User '{username}' exists: {user_exists}")
-        return user_exists
-    else:
-        print("Failed to check user existence.")
-        return False
+def get_player_info(_tag):
+    return None
 
 
 PATREON_LINK = "https://www.patreon.com/pyla/membership"
@@ -87,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 class WebDataService:
     PLAY_ORDER_VALUES = {"in_order", "lowest_to_highest", "highest_to_lowest"}
+    INTERFACE_MODE_VALUES = {"desktop", "browser", "headless"}
     SECRET_WEBHOOK_FIELDS = {"webhook_url", "discord_bot_token", "telegram_token"}
 
     GENERAL_FIELDS: dict[str, tuple[str, Any]] = {
@@ -95,8 +54,8 @@ class WebDataService:
         "default_trophy_target": ("int", 1000),
         "play_order": ("play_order", "in_order"),
         "max_fps": ("auto_int", "auto"),
+        "interface_mode": ("interface_mode", "desktop"),
         "used_threads": ("auto_int", "auto"),
-        "ocr_scale_down_factor": ("float", 0.8),
         "brawl_stars_package": ("str", "com.supercell.brawlstars"),
         "emulator_port": ("int", 5037),
         "trophies_multiplier": ("int", 1),
@@ -157,6 +116,7 @@ class WebDataService:
     def __init__(self, runtime_manager):
         self.runtime_manager = runtime_manager
         self._latest_version_cache: str | None = None
+        self._announcements_cache: list[dict[str, Any]] | None = None
         self._queue_items: list[dict[str, Any]] = []
         self._runtime_queue_mtime: float | None = None
         self._load_startup_queue_if_enabled()
@@ -182,6 +142,9 @@ class WebDataService:
         if value_type == "play_order":
             value_str = str(value or "").strip().lower()
             return value_str if value_str in self.PLAY_ORDER_VALUES else "in_order"
+        if value_type == "interface_mode":
+            value_str = str(value or "").strip().lower()
+            return value_str if value_str in self.INTERFACE_MODE_VALUES else "desktop"
         return "" if value is None else str(value)
 
     def _serialize(self, value_type: str, value: Any):
@@ -244,130 +207,11 @@ class WebDataService:
             traceback.print_exc()
 
     def get_auth_state(self) -> dict[str, Any]:
-        login_required = api_base_url != "localhost" or early_access
-        if not login_required:
-            return {
-                "required": False,
-                "authenticated": True,
-            }
-
-        saved_key = load_toml_as_dict("cfg/login.toml").get("key", "").strip()
-
-        if not saved_key:
-            return {
-                "required": True,
-                "authenticated": False,
-                "message": "Login required.",
-                "code": "MISSING_API_KEY",
-            }
-
-        try:
-            if early_access:
-                logger.info("Checking saved API key authentication state.")
-                result = validate_early_access_login(saved_key)
-                authenticated = bool(result.get("ok") and result.get("authenticated"))
-                logger.info(
-                    "Saved API key auth state: authenticated=%s code=%s detected_version=%s max_version=%s",
-                    authenticated,
-                    result.get("code"),
-                    result.get("detected_version"),
-                    result.get("max_version"),
-                )
-
-                return {
-                    "required": True,
-                    "authenticated": authenticated,
-                    "message": result.get("message", ""),
-                    "code": result.get("code"),
-                    "detected_version": result.get("detected_version"),
-                    "max_version": result.get("max_version"),
-                }
-
-            # Old fallback, only if early_access module is missing.
-            authenticated = check_if_exists(saved_key)
-
-            return {
-                "required": True,
-                "authenticated": bool(authenticated),
-            }
-
-        except Exception as exc:
-            logger.exception("Saved API key auth check failed.")
-            return {
-                "required": True,
-                "authenticated": False,
-                "message": f"Login check failed: {exc}",
-                "code": "LOGIN_CHECK_FAILED",
-            }
-
-    def validate_login(self, api_key: str) -> dict[str, Any]:
-        if api_base_url == "localhost" and not early_access:
-            return {
-                "ok": True,
-                "authenticated": True,
-                "message": "Local mode login bypassed.",
-            }
-
-        api_key = (api_key or "").strip()
-
-        if not api_key:
-            return {
-                "ok": False,
-                "authenticated": False,
-                "message": "API key is required.",
-                "code": "MISSING_API_KEY",
-            }
-
-        try:
-            if early_access:
-                logger.info("Manual API key validation started.")
-                result = validate_early_access_login(api_key)
-
-                if result.get("ok") and result.get("authenticated"):
-                    save_dict_as_toml({"key": api_key}, "cfg/login.toml")
-                    logger.info(
-                        "Manual API key validation succeeded: detected_version=%s max_version=%s",
-                        result.get("detected_version"),
-                        result.get("max_version"),
-                    )
-                else:
-                    logger.warning(
-                        "Manual API key validation failed: code=%s message=%s detected_version=%s max_version=%s",
-                        result.get("code"),
-                        result.get("message"),
-                        result.get("detected_version"),
-                        result.get("max_version"),
-                    )
-
-                return result
-
-            # Old fallback, only if early_access module is missing.
-            if not check_if_exists(api_key):
-                logger.warning("Legacy API key validation failed.")
-                return {
-                    "ok": False,
-                    "authenticated": False,
-                    "message": "Invalid API key.",
-                    "code": "INVALID_API_KEY",
-                }
-
-            save_dict_as_toml({"key": api_key}, "cfg/login.toml")
-            logger.info("Legacy API key validation succeeded.")
-
-            return {
-                "ok": True,
-                "authenticated": True,
-                "message": "Login successful.",
-            }
-
-        except Exception as exc:
-            logger.exception("Manual API key validation crashed.")
-            return {
-                "ok": False,
-                "authenticated": False,
-                "message": f"Login failed: {exc}",
-                "code": "LOGIN_FAILED",
-            }
+        return {
+            "required": False,
+            "authenticated": True,
+            "premium": False,
+        }
 
     def get_current_version(self) -> str:
         return PYLA_VERSION
@@ -394,6 +238,20 @@ class WebDataService:
             except Exception:
                 pass
         return warnings
+
+    def get_announcements_safe(self) -> list[dict[str, Any]]:
+        if api_base_url == "localhost":
+            return []
+        if self._announcements_cache is None:
+            try:
+                received = get_announcements()
+                self._announcements_cache = [item for item in received if isinstance(item, dict)]
+            except Exception:
+                self._announcements_cache = []
+        return [
+            item for item in self._announcements_cache
+            if item.get("audience", "all") in {"all", "non_early_access"}
+        ]
 
     def _resolve_brawler_catalog(self) -> list[str]:
         names = get_brawler_list()
@@ -635,7 +493,7 @@ class WebDataService:
         return {"current": current, "items": playstyles}
 
     def activate_playstyle(self, filename: str) -> dict[str, Any]:
-        target_path = resolve_project_path("playstyles", filename)
+        target_path = resolve_playstyle_path(filename)
         if not target_path.exists():
             raise FileNotFoundError(f"Playstyle '{filename}' was not found.")
 
@@ -654,7 +512,7 @@ class WebDataService:
             raise ValueError("Invalid playstyle filename.")
 
         filename = safe_filename
-        target_path = resolve_project_path("playstyles", filename)
+        target_path = resolve_playstyle_path(filename)
         if not target_path.exists():
             raise FileNotFoundError(f"Playstyle '{filename}' was not found.")
 
@@ -672,9 +530,9 @@ class WebDataService:
         original_name = secure_filename(file_storage.filename)
         base_name = Path(original_name).stem or "imported_playstyle"
         filename = f"{base_name}.pyla"
-        target_path = resolve_project_path("playstyles", filename)
+        target_path = resolve_playstyle_path(filename)
 
-        temp_path = resolve_project_path("playstyles", f".__upload__{filename}")
+        temp_path = resolve_playstyle_path(f".__upload__{filename}")
         file_storage.save(temp_path)
 
         try:
@@ -693,9 +551,9 @@ class WebDataService:
 
             if target_path.exists():
                 suffix = 2
-                while resolve_project_path("playstyles", f"{base_name}_{suffix}.pyla").exists():
+                while resolve_playstyle_path(f"{base_name}_{suffix}.pyla").exists():
                     suffix += 1
-                target_path = resolve_project_path("playstyles", f"{base_name}_{suffix}.pyla")
+                target_path = resolve_playstyle_path(f"{base_name}_{suffix}.pyla")
 
             shutil.move(str(temp_path), str(target_path))
         finally:
@@ -854,7 +712,22 @@ class WebDataService:
             return False
         return bool(player_info.get("name") and isinstance(player_info.get("brawlers"), list) and player_info.get("brawlers"))
 
-    def get_match_history_payload(self) -> dict[str, Any]:
+    def get_match_history_payload(
+            self,
+            start_date: date | None = None,
+            end_date: date | None = None,
+    ) -> dict[str, Any]:
+        runtime_status = self.runtime_manager.get_status()
+        session_started_at = runtime_status.get("session_started_at") if runtime_status.get("is_running") else None
+        session_summary = {
+            "active": bool(session_started_at),
+            "started_at": session_started_at,
+            "total_matches": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0.0,
+            "trophy_delta": 0,
+        }
         csv_path = resolve_project_path("cfg", "match_history.csv")
 
         grouped: dict[str, dict[str, Any]] = {}
@@ -866,6 +739,30 @@ class WebDataService:
                     continue
 
                 result = str(row.get("result", "")).strip().lower()
+                trophy_before = self._parse_int(row.get("current_trophies"))
+                trophy_delta = self._parse_int(row.get("trophy_delta"), 0) or 0
+                trophy_after = trophy_before + trophy_delta if trophy_before is not None else None
+                win_streak = self._parse_int(row.get("new_winstreak"), 0) or 0
+                power_level = self._parse_int(row.get("power_level"))
+                played_at = self._parse_match_datetime(row.get("date_time"))
+
+                # Session figures power the dashboard and must stay independent
+                # from the optional History-page date filter.
+                if session_started_at and played_at and played_at.timestamp() >= float(session_started_at):
+                    session_summary["trophy_delta"] += trophy_delta
+                    if result == "victory":
+                        session_summary["wins"] += 1
+                        session_summary["total_matches"] += 1
+                    elif result == "defeat":
+                        session_summary["losses"] += 1
+                        session_summary["total_matches"] += 1
+
+                played_on = played_at.date() if played_at else None
+                if start_date and (played_on is None or played_on < start_date):
+                    continue
+                if end_date and (played_on is None or played_on > end_date):
+                    continue
+
                 item = grouped.setdefault(brawler, {
                     "brawler": brawler,
                     "wins": 0,
@@ -876,15 +773,8 @@ class WebDataService:
                     "last_played": "",
                     "last_played_sort": "",
                 })
-
-                trophy_before = self._parse_int(row.get("current_trophies"))
-                trophy_delta = self._parse_int(row.get("trophy_delta"), 0) or 0
-                trophy_after = trophy_before + trophy_delta if trophy_before is not None else None
-                win_streak = self._parse_int(row.get("new_winstreak"), 0) or 0
-                power_level = self._parse_int(row.get("power_level"))
                 item["trophy_delta"] += trophy_delta
 
-                played_at = self._parse_match_datetime(row.get("date_time"))
                 played_at_sort = played_at.isoformat() if played_at else ""
                 if played_at and played_at.isoformat() > item["last_played_sort"]:
                     item["last_played"] = played_at.strftime("%Y-%m-%d %H:%M")
@@ -967,7 +857,18 @@ class WebDataService:
             })
 
         items.sort(key=lambda item: (-item["total_matches"], item["brawler"]))
-        return self._build_match_history_response(items)
+        if session_summary["total_matches"]:
+            session_summary["win_rate"] = round(
+                (session_summary["wins"] / session_summary["total_matches"]) * 100,
+                1,
+            )
+        response = self._build_match_history_response(items, session_summary=session_summary)
+        response["date_filter"] = {
+            "start_date": start_date.isoformat() if start_date else None,
+            "end_date": end_date.isoformat() if end_date else None,
+            "inclusive": True,
+        }
+        return response
 
     @staticmethod
     def _parse_match_datetime(value: Any) -> datetime | None:
@@ -990,7 +891,10 @@ class WebDataService:
             return default
 
     @staticmethod
-    def _build_match_history_response(items: list[dict[str, Any]]) -> dict[str, Any]:
+    def _build_match_history_response(
+            items: list[dict[str, Any]],
+            session_summary: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         total_matches = sum(item["total_matches"] for item in items)
         wins = sum(item["wins"] for item in items)
         losses = sum(item["losses"] for item in items)
@@ -1006,19 +910,32 @@ class WebDataService:
         else:
             summary["win_rate"] = summary["loss_rate"] = 0.0
 
-        return {"summary": summary, "items": items}
+        return {
+            "summary": summary,
+            "session_summary": session_summary or {
+                "active": False,
+                "started_at": None,
+                "total_matches": 0,
+                "wins": 0,
+                "losses": 0,
+                "win_rate": 0.0,
+                "trophy_delta": 0,
+            },
+            "items": items,
+        }
 
     def get_bootstrap_payload(self) -> dict[str, Any]:
         discord_link = get_discord_link()
         auth_payload = self.get_auth_state()
-        auth_payload["early_access"] = early_access
         return {
             "app": {
                 "name": "PylaAI",
                 "version": self.get_current_version(),
                 "latest_version": self.get_latest_version_safe(),
                 "warnings": self.get_warnings(),
+                "download_url": DOWNLOAD_URL,
             },
+            "announcements": self.get_announcements_safe(),
             "auth": auth_payload,
             "runtime": self.runtime_manager.get_status(),
             "links": {

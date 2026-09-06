@@ -943,5 +943,20 @@
         "safe_range": 328,
         "super_range": 640,
         "super_type": "damage"
+    },
+    "wendy": {
+        "attack_projectile_radius": 300,
+        "attack_projectile_speed": 3500,
+        "attack_range": 512,
+        "hold_attack": 0,
+        "ignore_walls_for_attacks": false,
+        "ignore_walls_for_supers": true,
+        "rarity": "Mythic",
+        "safe_range": 315,
+        "speed": 770,
+        "super_projectile_radius": 0,
+        "super_projectile_speed": 1196,
+        "super_range": 320,
+        "super_type": "damage"
     }
 }

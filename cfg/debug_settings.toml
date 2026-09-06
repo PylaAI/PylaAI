@@ -1,5 +1,5 @@
 verbose_debug = false
-state_finder_debug = false
+state_finder_debug = true
 re_apply_movement = false
 debug_view = false
 debug_view_fps = 15

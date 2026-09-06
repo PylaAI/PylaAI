@@ -1,8 +1,8 @@
-webhook_url = ""
-discord_id = ""
+webhook_url = "https://discord.com/api/webhooks/1391144183233904660/uMInftNHkS-DQr51wW0mcikWxKQdcVL1N_MDy466y-yZ070AH2a3PWPZS03ivnIvMcoq"
+discord_id = "https://discord.com/api/webhooks/1391144183233904660/uMInftNHkS-DQr51wW0mcikWxKQdcVL1N_MDy466y-yZ070AH2a3PWPZS03ivnIvMcoq"
 ping_when_stuck = true
 ping_when_target_is_reached = true
-ping_every_x_match = 0
+ping_every_x_match = 1
 ping_every_x_minutes = 0
 telegram_token = ""
 telegram_chat_id = ""

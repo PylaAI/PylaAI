@@ -6,22 +6,6 @@ from state_finder import get_state, is_underdog
 from trophy_observer import TrophyObserver, MatchResult
 from utils import find_template_center, load_toml_as_dict, notify_user, save_brawler_data
 
-try:
-    from early_access.early_access import get_brawler_stats, get_player_info
-
-    early_access = True
-except (ImportError, ModuleNotFoundError):
-    early_access = False
-
-
-    def get_brawler_stats(_player_info, _brawler_name, _power_level=False):
-        return None, None
-
-
-    def get_player_info(_tag):
-        return None
-
-
 def load_image(image_path, scale_factor):
     image = cv2.imread(image_path)
     orig_height, orig_width = image.shape[:2]
@@ -63,13 +47,10 @@ class StageManager:
             'end_trio_showdown_1': self.end_game,
             'end_trio_showdown_2': self.end_game,
             'end_trio_showdown_3': self.end_game,
-            'nano_noodles': self.click_nano_noodles,
         }
         self.matches_since_last_webhook_ping = 0
         self.ping_every_x_match = load_toml_as_dict("cfg/webhook_config.toml")['ping_every_x_match']
         self.runtime_control = runtime_control
-        if early_access:
-            self.player_tag = load_toml_as_dict("./cfg/general_config.toml")['player_tag']
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
@@ -107,20 +88,6 @@ class StageManager:
         if self._should_stop() or self._should_pause():
             return
 
-        if early_access and self.player_tag:
-            print("Waiting 3 seconds for API to update with latest data...")
-            time.sleep(3)
-            player_info = get_player_info(self.player_tag)
-            if not player_info:
-                print("Player tag is incorrect. Use your Brawl Stars player tag, not your Supercell ID. Skipping API stat refresh.")
-            else:
-                current_brawler = self.brawlers_pick_data[0]['brawler']
-                trophies, win_streak = get_brawler_stats(player_info, current_brawler)
-                if trophies is not None and win_streak is not None:
-                    if trophies != self.Trophy_observer.current_trophies or win_streak != self.Trophy_observer.win_streak:
-                        print(f"Warning: Trophies or win streak from API do not match current values. This may indicate a desync. API values: trophies={trophies}, win_streak={win_streak}. Current values: trophies={self.Trophy_observer.current_trophies}, win_streak={self.Trophy_observer.win_streak}")
-                    self.Trophy_observer.current_trophies = trophies
-                    self.Trophy_observer.win_streak = win_streak
         print("state is lobby, starting game")
         values = {
             "trophies": self.Trophy_observer.current_trophies,
@@ -205,27 +172,6 @@ class StageManager:
         self._star_drop_thread = threading.Thread(target=_handle_drop, daemon=True)
         self._star_drop_thread.start()
 
-    def click_nano_noodles(self):
-        noodle_x, noodle_y = 960, 740
-        offset_x = 330 * self.window_controller.width_ratio
-        self.window_controller.click(
-            noodle_x,
-            noodle_y,
-            already_include_ratio=False
-        )
-        time.sleep(0.1)
-        self.window_controller.click(
-            noodle_x + offset_x,
-            noodle_y,
-            already_include_ratio=False
-        )
-        time.sleep(0.1)
-        self.window_controller.click(
-            noodle_x - offset_x,
-            noodle_y,
-            already_include_ratio=False
-        )
-
     def end_game(self):
         screenshot = self.window_controller.screenshot()
 
@@ -240,7 +186,7 @@ class StageManager:
                 parsed_result = self.Trophy_observer.parse_game_result(raw_found_result)
 
                 current_brawler = self.brawlers_pick_data[0]['brawler']
-                power_level = None if not early_access else get_brawler_stats(get_player_info(self.player_tag), current_brawler, power_level=True)[2]
+                power_level = None
                 underdog = is_underdog(screenshot)
                 if underdog:
                     print("Underdog detected for this match.")

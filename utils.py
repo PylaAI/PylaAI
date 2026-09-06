@@ -4,8 +4,6 @@ import io
 import math
 import os
 import random
-import ssl
-import threading
 import time
 from io import BytesIO
 import ctypes
@@ -18,78 +16,12 @@ import cv2
 from packaging import version
 import traceback
 
-try:
-    from early_access.early_access import get_brawler_stats, get_player_info
-    early_access = True
-except (ImportError, ModuleNotFoundError):
-    def get_brawler_stats(_player_info, _brawler_name):
-        return None, None
-
-    def get_player_info(_tag):
-        return None
-    early_access = False
-
-def extract_text_and_positions(image_path):
-    results = reader.readtext(image_path)
-    text_details = {}
-    for (bbox, text, prob) in results:
-        top_left, top_right, bottom_right, bottom_left = bbox
-        cx = (top_left[0] + top_right[0] + bottom_right[0] + bottom_left[0]) / 4
-        cy = (top_left[1] + top_right[1] + bottom_right[1] + bottom_left[1]) / 4
-        center = (cx, cy)
-        formatted_bbox = {
-            'top_left': top_left,
-            'top_right': top_right,
-            'bottom_right': bottom_right,
-            'bottom_left': bottom_left,
-            'center': center
-        }
-
-        text_details[text.lower()] = formatted_bbox
-
-    return text_details
+def get_brawler_stats(_player_info, _brawler_name):
+    return None, None
 
 
-class DefaultEasyOCR:
-    REQUIRED_MODELS = ("craft_mlt_25k.pth", "english_g2.pth")
-
-    def __init__(self):
-        self.reader = None
-        self.lock = threading.Lock()
-
-    def readtext(self, image_input):
-        if self.reader is None:
-            with self.lock:
-                if self.reader is None:
-                    self.reader = self.create_reader()
-        return self.reader.readtext(image_input)
-
-    def create_reader(self):
-        model_dir = resolve_project_path("models", "easyocr")
-        self.validate_model_directory(model_dir)
-        try:
-            import easyocr
-            try:
-                return easyocr.Reader(
-                    ['en'],
-                    model_storage_directory=str(model_dir),
-                    download_enabled=False,
-                    verbose=False,
-                    gpu=False
-                )
-            except Exception as exc:
-                raise EasyOCRInitializationError(f"EasyOCR failed to load bundled models from {model_dir}: {exc}") from exc
-        except ssl.SSLCertVerificationError:
-            raise EasyOCRInitializationError("EasyOCR initialization failed due to SSL certificate verification error. To fix this, please check https://discord.com/channels/1205263029269438574/1227618442073342002/1499330873538117703 for a solution.")
-
-    def validate_model_directory(self, model_dir):
-        missing = [filename for filename in self.REQUIRED_MODELS if not (model_dir / filename).exists()]
-        if missing:
-            raise EasyOCRInitializationError(f"Missing EasyOCR model file(s) in {model_dir}: {', '.join(missing)}")
-
-
-class EasyOCRInitializationError(RuntimeError):
-    pass
+def get_player_info(_tag):
+    return None
 
 
 def _get_project_root():
@@ -105,6 +37,22 @@ PROJECT_ROOT = _get_project_root()
 
 def resolve_project_path(*parts) -> Path:
     return PROJECT_ROOT.joinpath(*parts)
+
+
+def resolve_within(base_path, *parts) -> Path:
+    base = resolve_project_path(base_path).resolve()
+    candidate = base.joinpath(*parts).resolve()
+    if candidate != base and not candidate.is_relative_to(base):
+        raise ValueError(f"Path escapes the allowed directory: {candidate}")
+    return candidate
+
+
+def resolve_playstyle_path(filename) -> Path:
+    filename = str(filename or "").strip()
+    if not filename or Path(filename).name != filename or not filename.lower().endswith(".pyla"):
+        raise ValueError("Invalid playstyle filename.")
+    return resolve_within("playstyles", filename)
+
 
 cached_toml = {}
 def load_toml_as_dict(file_path, cache=True):
@@ -208,21 +156,8 @@ def load_all_brawlers_names():
 
 
 def api_update_brawler_data(brawler_data):
-    if not early_access:
-        return
-    player_tag = load_toml_as_dict("cfg/general_config.toml")["player_tag"]
-    if not player_tag:
-        return
-    player_info = get_player_info(player_tag)
-    if not player_info:
-        return
-    for brawler in brawler_data:
-        trophies, win_streak = get_brawler_stats(player_info, brawler['brawler'])
-        if trophies is not None:
-            brawler['trophies'] = trophies
-        if win_streak is not None:
-            brawler['win_streak'] = win_streak
-    save_brawler_data(brawler_data)
+    # The public edition has no authenticated player-profile lookup.
+    return
 
 
 def clear_brawler_data():
@@ -396,6 +331,7 @@ def save_brawler_icon(brawler_name):
 
 
 PYLA_VERSION = "0.8.15"
+DOWNLOAD_URL = "https://pyla-ai.angelfirela.dev/download"
 
 
 def get_latest_version():
@@ -408,12 +344,29 @@ def get_latest_version():
         return None
 
 
+def get_announcements():
+    """Fetch active announcements without making startup depend on the API."""
+    url = f'https://{api_base_url}/announcements'
+    try:
+        response = requests.get(url, timeout=3.0)
+        if response.status_code == 200:
+            data = response.json()
+            announcements = data.get('announcements', [])
+            return announcements if isinstance(announcements, list) else []
+    except Exception:
+        pass
+    return []
+
+
 def check_version():
     if api_base_url != "localhost":
         latest_version = get_latest_version()
         if latest_version:
             if version.parse(PYLA_VERSION) < version.parse(latest_version):
-                print(f"Warning: (ignore if you're using early access) You are not using the latest public version of Pyla. \nCheck the discord for the latest download link.")
+                print(
+                    "Warning: You are not using the latest public version of Pyla. "
+                    f"Download it here: {DOWNLOAD_URL}"
+                )
         else:
             print("Error, couldn't get the version, please check your internet connection or go ask for help in the discord.")
 
@@ -661,15 +614,17 @@ def get_brawler_icon_path(brawler_name: str) -> Path | None:
     if not brawler_name:
         return None
 
+    raw_name = str(brawler_name).lower().strip()
+    if "/" in raw_name or "\\" in raw_name or raw_name in {".", ".."}:
+        return None
     normalized = normalize_brawler_filename(brawler_name)
     candidates = [
-        resolve_project_path("api", "assets", "brawler_icons", f"{normalized}.png"),
-        resolve_project_path("api", "assets", "brawler_icons2", f"{str(brawler_name).lower()}.png"),
-        resolve_project_path("api", "assets", "brawler_icons2", f"{str(brawler_name).lower().strip()}.png"),
+        resolve_within(resolve_project_path("api", "assets", "brawler_icons"), f"{normalized}.png"),
+        resolve_within(resolve_project_path("api", "assets", "brawler_icons2"), f"{raw_name}.png"),
     ]
 
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_file():
             return candidate
     return None
 
@@ -760,15 +715,15 @@ def interpret_pyla_code(pyla_code, context):
 
 
 def load_pyla_script(filename):
-    script_path = resolve_project_path("playstyles", filename)
     try:
+        script_path = resolve_playstyle_path(filename)
         with open(script_path, 'r', encoding='utf-8') as file:
             metadata_header = file.readline().strip()
             metadata = json.loads(metadata_header) if metadata_header else {}
             pyla_script = file.read()
         return metadata, pyla_script
     except FileNotFoundError:
-        print(f"Error: The file {script_path} was not found.")
+        print(f"Error: The playstyle file '{filename}' was not found.")
         return "", ""
     except Exception as e:
         print(f"An error occurred while loading the .pyla script: {e}")

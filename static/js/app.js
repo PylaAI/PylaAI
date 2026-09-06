@@ -3,86 +3,68 @@ const NAV_ITEMS = {
     queue: { label: "Brawlers", icon: "queue" },
     playstyles: { label: "Playstyles", icon: "playstyles" },
     history: { label: "History", icon: "history" },
+    logs: { label: "Logs", icon: "logs" },
     settings: { label: "Settings", icon: "settings" },
 };
 
 const GAMEMODE_LABELS = {
     all: "All Gamemodes",
     brawlball: "Brawl Ball",
+    brawl_ball: "Brawl Ball",
+    bounty: "Bounty",
+    duo_showdown: "Duo Showdown",
+    gem_grab: "Gem Grab",
+    heist: "Heist",
+    hot_zone: "Hot Zone",
+    knockout: "Knockout",
     basketbrawl: "Basket Brawl",
     brawlball_5v5: "Brawl Ball 5v5",
+    solo_showdown: "Solo Showdown",
+    trio_showdown: "Trio Showdown",
     showdown: "Showdown",
+    wipeout: "Wipeout",
     other: "Other",
 };
 
-const AUTH_ERROR_COPY = {
-    MISSING_API_KEY: {
-        title: "API key required",
-        detail: "Generate one in Discord with /generate_key using PylaBot.",
-    },
-    MISSING_HWID: {
-        title: "Device ID missing",
-        detail: "The app could not send this device ID. Restart PylaAI and check the Python logs if it repeats.",
-    },
-    MISSING_BUILD_TIMESTAMP: {
-        title: "Build timestamp missing",
-        detail: "The app could not build a complete auth request. Restart PylaAI and check the Python logs if it repeats.",
-    },
-    INVALID_BUILD_TIMESTAMP: {
-        title: "Build timestamp invalid",
-        detail: "Check that your system clock is correct, then try again.",
-    },
-    MISSING_BUILD_SIGNATURE: {
-        title: "Build signature missing",
-        detail: "The app could not sign the auth request. Restart PylaAI and check the Python logs if it repeats.",
-    },
-    INVALID_API_KEY: {
-        title: "API key not found",
-        detail: "Generate a fresh key with /generate_key using PylaBot, then paste the full key here.",
-    },
-    IP_MISMATCH: {
-        title: "IP address changed",
-        detail: "Refresh your API key in Discord so it can bind to your current IP.",
-    },
-    HWID_MISMATCH: {
-        title: "Device mismatch",
-        detail: "Refresh your API key in Discord from this device.",
-    },
-    VERSION_TOO_NEW: {
-        title: "Version is too new for this key",
-        detail: "Refresh your API key in Discord or use a version allowed by this key.",
-    },
-    INVALID_BUILD_SIGNATURE: {
-        title: "App build could not be verified",
-        detail: "This usually means the local build and auth server secrets do not match.",
-    },
-    SIGNATURE_EXPIRED: {
-        title: "Auth request expired",
-        detail: "Check that your system clock is correct, then try again.",
-    },
-    AUTH_SERVER_UNREACHABLE: {
-        title: "Auth server unreachable",
-        detail: "Check your internet connection and try again.",
-    },
-    INVALID_AUTH_RESPONSE: {
-        title: "Auth server returned an invalid response",
-        detail: "Try again. If it keeps happening, check the Python logs for the auth status code.",
-    },
-    LOGIN_CHECK_FAILED: {
-        title: "Saved key check failed",
-        detail: "The saved key could not be checked. Try again or generate a fresh key with /generate_key using PylaBot.",
-    },
-    LOGIN_FAILED: {
-        title: "Login failed locally",
-        detail: "The local web UI hit an error while validating the key. Check the Python logs for the traceback.",
-    },
-    LOGIN_REQUEST_FAILED: {
-        title: "Login request failed",
-        detail: "The browser could not reach the local PylaAI web UI login endpoint.",
-    },
-};
+const UI_API_TOKEN = document.querySelector('meta[name="pyla-ui-token"]')?.content || "";
+
+const GAMEMODE_LOGOS = new Set([
+    "brawlball", "bounty", "duo_showdown", "gem_grab", "heist", "hot_zone",
+    "knockout", "solo_showdown", "trio_showdown", "wipeout",
+]);
 
 const INVALID_PLAYER_TAG_MESSAGE = "Player tag is incorrect. Use your Brawl Stars player tag, not your Supercell ID.";
+const BRAWLER_RARITIES = {
+    "Common": { order: 1, color: "#b8bec9" },
+    "Rare": { order: 2, color: "#58d65c" },
+    "Super Rare": { order: 3, color: "#5b8cff" },
+    "Epic": { order: 4, color: "#d967ff" },
+    "Mythic": { order: 5, color: "#ff6b7d" },
+    "Legendary": { order: 6, color: "#ffd83d" },
+    "Ultra Legendary": { order: 7, color: "#dffb45" },
+    "Unknown": { order: 999, color: "#f3f4f6" },
+};
+
+function getStorageItem(key, defaultValue) {
+    try {
+        return localStorage.getItem(key) || defaultValue;
+    } catch (e) {
+        return defaultValue;
+    }
+}
+
+function setStorageItem(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch (e) {}
+}
+
+function getStoredISODate(key) {
+    const value = getStorageItem(key, "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : "";
+}
 
 const state = {
     bootstrap: null,
@@ -90,29 +72,51 @@ const state = {
     selectedBrawler: "",
     queueTargetType: "trophies",
     brawlerSearch: "",
+    brawlerSort: getStorageItem("brawlerSort", "alphabetical"),
+    brawlerSortDirection: getStorageItem("brawlerSortDirection", "asc"),
+    showAllBrawlers: getStorageItem("showAllBrawlers", "false") === "true",
     playerInfo: { ok: true, player_tag: "", player_name: "", stats: {} },
+    playerInfoCache: {},
     historySearch: "",
-    historySort: "matches",
+    historySort: ["matches", "recent", "winrate", "name"].includes(getStorageItem("historySort", "matches"))
+        ? getStorageItem("historySort", "matches")
+        : "matches",
+    historyStartDate: getStoredISODate("historyStartDate"),
+    historyEndDate: getStoredISODate("historyEndDate"),
     historyChartRange: "recent",
+    activeHistoryBrawler: null,
+    settingsSearch: "",
     playstyleSearch: "",
     playstyleFilter: "all",
+    expandedPlaystyleDescriptions: new Set(),
     pendingSaves: {},
     playerTagTimer: null,
     playerTagLoading: false,
-    runtimePollTimer: null,
-    authSubmitting: false,
-    expandedPlaystyleDescriptions: new Set(),
+    brawlerScrollbarCleanup: null,
+    queueScrollbarCleanup: null,
     playstyleScrollbarCleanup: null,
+    profileScrollbarCleanup: null,
+    mainViewScrollbarCleanup: null,
+    runtimePollTimer: null,
+    historyPollTimer: null,
+    historyRefreshInFlight: null,
+    authSubmitting: false,
+    autoScrollLogs: true,
+    forceScrollLogs: false,
+    adbDevices: null,
+    scanningAdb: false,
 };
+
+function renderSyncButton() { return ""; }
 
 const SETTINGS_META = {
     general: [
         { key: "player_tag", label: "Player Tag", type: "text", placeholder: "#PLAYER", help: "Used to autofill live trophies and win streaks inside the brawler editor. Use your Brawl Stars player tag, not your Supercell ID." },
         { key: "default_trophy_target", label: "Default Trophy Target", type: "number", help: "Default trophy target used when adding a new brawler to the queue." },
         { key: "run_for_minutes", label: "Run Time", type: "number", suffix: "min", help: "How long Pyla runs before cooldown logic takes over." },
+        { key: "interface_mode", label: "Interface Mode", type: "select", options: [{ value: "desktop", label: "Integrated window" }, { value: "browser", label: "System browser" }, { value: "headless", label: "Headless" }], help: "Choose what Pyla opens at startup. Headless opens no window or browser, but the local web UI remains available. Requires a full restart." },
         { key: "max_fps", label: "Max FPS", type: "text", help: "Processing cap. Use auto if you want Pyla to manage it." },
         { key: "used_threads", label: "Threads", type: "text", help: "Worker thread count. Auto keeps the current behavior." },
-        { key: "ocr_scale_down_factor", label: "OCR Scale", type: "number", step: "0.1", help: "Scale factor used before OCR work." },
         { key: "trophies_multiplier", label: "Trophies Multiplier", type: "number", help: "Useful for custom arenas or multiplier-based modes." },
         { key: "emulator_port", label: "Emulator Port", type: "number", help: "ADB port used for the emulator instance." },
         { key: "brawl_stars_package", label: "Package Name", type: "text", help: "Android package used when restarting Brawl Stars." },
@@ -168,6 +172,9 @@ const SETTINGS_META = {
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
+    if (getStorageItem("sidebarCollapsed", "false") === "true") {
+        setSidebarCollapsed(true);
+    }
     renderNav();
     bindShellEvents();
 
@@ -185,28 +192,76 @@ function renderNav() {
     nav.innerHTML = Object.entries(NAV_ITEMS).map(([view, item]) => `
         <button class="nav-item ${view === state.currentView ? "active" : ""}" data-view="${view}">
             <span class="nav-icon">${iconMarkup(item.icon)}</span>
-            <span>${escapeHtml(item.label)}</span>
+            <span class="nav-label">${escapeHtml(item.label)}</span>
         </button>
     `).join("");
+    updateNavTooltips(document.body.classList.contains("sidebar-collapsed"));
 }
+
 
 function bindShellEvents() {
     document.addEventListener("click", (event) => {
         const navButton = event.target.closest("[data-view]");
         if (navButton) {
             setView(navButton.dataset.view);
+            setSidebarOpen(false);
         }
 
-        const lockedAction = event.target.closest(".ea-locked-action");
+        const lockedAction = event.target.closest(".premium-locked-action");
         if (lockedAction) {
             event.preventDefault();
             event.stopPropagation();
-            showEarlyAccessModal();
+            showPremiumModal();
         }
     });
-
-    document.getElementById("authForm")?.addEventListener("submit", handleLogin);
+    document.getElementById("menuToggle")?.addEventListener("click", () => {
+        if (window.innerWidth > 980) {
+            setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
+            return;
+        }
+        setSidebarOpen(!document.body.classList.contains("sidebar-open"));
+    });
+    document.getElementById("sidebarClose")?.addEventListener("click", () => setSidebarOpen(false));
+    document.getElementById("sidebarBackdrop")?.addEventListener("click", () => setSidebarOpen(false));
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
+            setSidebarOpen(false);
+            document.getElementById("menuToggle")?.focus();
+        }
+    });
+    window.addEventListener("resize", () => {
+        if (window.innerWidth > 980) setSidebarOpen(false);
+    });
+    window.addEventListener("focus", refreshVisibleHistory);
+    document.addEventListener("visibilitychange", refreshVisibleHistory);
     bindTooltipEvents();
+}
+
+function setSidebarOpen(isOpen) {
+    const open = Boolean(isOpen && window.innerWidth <= 980);
+    document.body.classList.toggle("sidebar-open", open);
+    const toggle = document.getElementById("menuToggle");
+    toggle?.setAttribute("aria-expanded", String(open));
+    toggle?.setAttribute("aria-label", open ? "Close navigation menu" : "Open navigation menu");
+}
+
+function setSidebarCollapsed(isCollapsed) {
+    const collapsed = Boolean(isCollapsed);
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    setStorageItem("sidebarCollapsed", String(collapsed));
+    updateNavTooltips(collapsed);
+    const toggle = document.getElementById("menuToggle");
+    toggle?.setAttribute("aria-expanded", String(!collapsed));
+    toggle?.setAttribute("aria-label", collapsed ? "Expand navigation menu" : "Collapse navigation menu");
+}
+
+function updateNavTooltips(collapsed) {
+    document.querySelectorAll(".nav-item[data-view]").forEach((button) => {
+        const item = NAV_ITEMS[button.dataset.view];
+        if (!item) return;
+        if (collapsed) button.setAttribute("data-tooltip", item.label);
+        else button.removeAttribute("data-tooltip");
+    });
 }
 
 function bindTooltipEvents() {
@@ -220,7 +275,12 @@ function bindTooltipEvents() {
             return;
         }
 
-        tooltip.innerHTML = target.dataset.tooltip;
+        const lines = String(target.dataset.tooltip || "").split("\n");
+        tooltip.replaceChildren();
+        lines.forEach((line, index) => {
+            if (index > 0) tooltip.appendChild(document.createElement("br"));
+            tooltip.appendChild(document.createTextNode(line));
+        });
         tooltip.classList.remove("hidden");
     });
 
@@ -237,40 +297,31 @@ function bindTooltipEvents() {
     });
 }
 
-async function bootstrap() {
-    const payload = await fetchJSON("/api/bootstrap");
+
+async function bootstrap(cachedPayload = null) {
+    const payload = cachedPayload || await fetchJSON("/api/bootstrap");
     state.bootstrap = payload;
-    state.selectedBrawler = state.selectedBrawler || payload.queue[0]?.brawler || payload.brawlers[0]?.name || "";
-    syncQueueFormState();
-
-    const playerTag = payload.settings.general.player_tag || "";
-    if (playerTag) {
-        const playerInfo = await fetchJSON(`/api/player-info?tag=${encodeURIComponent(playerTag)}`, {}, true);
-        state.playerInfo = playerInfo?.ok
-            ? playerInfo
-            : { ok: false, player_tag: cleanPlayerTag(playerTag), player_name: "", stats: {}, message: playerInfo?.message || INVALID_PLAYER_TAG_MESSAGE };
+    if (payload.settings?.general?.history_sort) {
+        state.historySort = payload.settings.general.history_sort;
+        setStorageItem("historySort", state.historySort);
     }
-
+    state.selectedBrawler = state.selectedBrawler || payload.queue[0]?.brawler || payload.brawlers[0]?.name || "";
+    state.playerInfo = { ok: false, player_tag: "", player_name: "", stats: {}, message: "Premium player data is unavailable in the public edition." };
+    syncQueueFormState();
     updateChrome();
     renderAll();
-    toggleAuthModal();
+    showPendingAnnouncements();
     startRuntimePolling();
+    startHistoryPolling();
 }
 
+
 function updateChrome() {
-    const { app, auth, runtime } = state.bootstrap;
-    const version = `${app.name} v${app.version}`;
-
-    document.getElementById("sidebarVersion").textContent = version;
-    document.getElementById("sidebarStatus").textContent = runtimeLabel(runtime);
-    document.getElementById("runtimeStatusPill").textContent = runtimeLabel(runtime);
-    document.getElementById("runtimeStatusPill").className = `badge ${runtimeBadgeClass(runtime)}`;
-    document.getElementById("authStatusPill").textContent = auth.required ? (auth.authenticated ? "Authenticated" : "Login required") : "Local mode";
-    document.getElementById("authStatusPill").className = `badge ${auth.required && !auth.authenticated ? "danger" : "badge-outline"}`;
-
-    const indicator = document.getElementById("sidebarIndicator");
-    indicator.className = `status-indicator ${runtime.state === "error" ? "is-danger" : runtime.is_running ? "is-running" : "is-idle"}`;
-
+    const { app } = state.bootstrap;
+    document.getElementById("sidebarVersion").textContent = `${app.name} v${app.version}`;
+    const discordUrl = state.bootstrap.links?.discord?.url || "#";
+    document.getElementById("sidebarDiscordLink")?.setAttribute("href", discordUrl);
+    document.getElementById("officialDiscordLink")?.setAttribute("href", discordUrl);
     renderNav();
 }
 
@@ -291,86 +342,9 @@ function runtimeBadgeClass(runtime) {
     return "badge-outline";
 }
 
-function toggleAuthModal() {
-    const modal = document.getElementById("authModal");
-    if (!modal) return;
 
-    const auth = state.bootstrap?.auth || {};
-    const shouldShow = Boolean(auth.required && !auth.authenticated);
-    modal.classList.toggle("hidden", !shouldShow);
 
-    if (shouldShow) {
-        const instructions = document.getElementById("authInstructions");
-        if (instructions) {
-            if (!auth.early_access) {
-                instructions.innerHTML = "<h1> This screen isn't supposed to appear as an api key is included. Check the logs.</h1>";
-            } else {
-                instructions.innerHTML = "Use <code>/generate_key</code> if you bought via Patreon, or <code>/refresh_key</code> if you bought a temporary key, with PylaBot in #commands, then paste the key here. Your key is handled by Python only and is not rendered back into the UI.";
-            }
-        }
-        renderAuthMessage(auth, auth.code ? "error" : "info");
-    } else {
-        renderAuthMessage(null);
-    }
-}
 
-async function handleLogin(event) {
-    event.preventDefault();
-
-    const input = document.getElementById("apiKeyInput");
-    const button = document.getElementById("authSubmitBtn");
-
-    state.authSubmitting = true;
-    if (button) {
-        button.disabled = true;
-        button.classList.add("is-disabled");
-        button.textContent = "Checking...";
-    }
-    renderAuthMessage({ message: "Checking your API key with the auth server." }, "info");
-
-    let result;
-    try {
-        result = await fetchJSON("/api/login/validate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ api_key: input.value }),
-        }, true);
-    } catch (error) {
-        result = {
-            ok: false,
-            authenticated: false,
-            message: error.message || "Login request failed.",
-            code: "LOGIN_REQUEST_FAILED",
-        };
-    } finally {
-        state.authSubmitting = false;
-        if (button) {
-            button.disabled = false;
-            button.classList.remove("is-disabled");
-            button.textContent = "Unlock UI";
-        }
-    }
-
-    if (!result.ok) {
-        state.bootstrap.auth = {
-            ...(state.bootstrap.auth || {}),
-            authenticated: false,
-            message: result.message || "Login failed.",
-            code: result.code,
-            detected_version: result.detected_version,
-            max_version: result.max_version,
-        };
-        renderAuthMessage(result, "error");
-        updateChrome();
-        showToast(formatAuthToast(result), "error");
-        return;
-    }
-
-    input.value = "";
-    renderAuthMessage(null);
-    showToast("Login successful.", "success");
-    await bootstrap();
-}
 
 function setView(view) {
     state.currentView = view;
@@ -382,6 +356,14 @@ function setView(view) {
 
     document.getElementById("pageTitle").textContent = NAV_ITEMS[view].label;
     renderQueueDock();
+
+    if (view === "logs") {
+        refreshLogs();
+    } else if (view === "history") {
+        refreshMatchHistory();
+    }
+
+    bindMainViewScrollbar();
 }
 
 function renderAll() {
@@ -397,18 +379,78 @@ function renderAll() {
 function renderAlerts() {
     const alerts = document.getElementById("alertStack");
     const warnings = state.bootstrap.app.warnings || [];
-    alerts.innerHTML = warnings.map((warning) => `<div class="alert">${escapeHtml(warning)}</div>`).join("");
+    const downloadUrl = safeExternalUrl(state.bootstrap.app.download_url);
+    alerts.innerHTML = warnings.map((warning) => {
+        const downloadLink = downloadUrl && String(warning).startsWith("New version available:")
+            ? ` <a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer">Download</a>`
+            : "";
+        return `<div class="alert">${escapeHtml(warning)}${downloadLink}</div>`;
+    }).join("");
+}
+
+function safeExternalUrl(value) {
+    try {
+        const parsed = new URL(String(value || ""));
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+    } catch (error) {
+        return "";
+    }
+}
+
+function getSeenAnnouncementIds() {
+    try {
+        const parsed = JSON.parse(getStorageItem("pylaSeenAnnouncements", "[]"));
+        return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
+    } catch (error) {
+        return new Set();
+    }
+}
+
+function showPendingAnnouncements() {
+    if (document.getElementById("announcementModal")) return;
+    const seen = getSeenAnnouncementIds();
+    const announcement = (state.bootstrap?.announcements || []).find((item) => {
+        return item && item.id != null && !seen.has(String(item.id));
+    });
+    if (!announcement) return;
+
+    const linkUrl = safeExternalUrl(announcement.link_url);
+    const linkLabel = String(announcement.link_label || "Learn more");
+    const linkMarkup = linkUrl
+        ? `<a class="btn btn-primary" href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkLabel)}</a>`
+        : "";
+
+    document.body.insertAdjacentHTML("beforeend", `
+        <div id="announcementModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="announcementTitle" style="z-index: 350;">
+            <section class="modal" style="max-width: 520px;">
+                <header class="modal-header">
+                    <p class="eyebrow">Announcement</p>
+                    <h3 id="announcementTitle">${escapeHtml(announcement.title || "PylaAI announcement")}</h3>
+                    <p style="margin-top: 14px; white-space: pre-wrap; line-height: 1.6;">${escapeHtml(announcement.message || "")}</p>
+                </header>
+                <div style="display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 24px;">
+                    ${linkMarkup}
+                    <button id="dismissAnnouncementBtn" class="btn" type="button">Got it</button>
+                </div>
+            </section>
+        </div>
+    `);
+
+    const dismiss = () => {
+        seen.add(String(announcement.id));
+        setStorageItem("pylaSeenAnnouncements", JSON.stringify([...seen].slice(-200)));
+        document.getElementById("announcementModal")?.remove();
+        showPendingAnnouncements();
+    };
+    document.getElementById("dismissAnnouncementBtn")?.addEventListener("click", dismiss);
 }
 
 function renderDashboard() {
     const view = document.getElementById("view-dashboard");
-    const { links, queue, runtime, auth } = state.bootstrap;
+    const { queue, runtime } = state.bootstrap;
     const activePlaystyle = getActivePlaystyle();
-    const canStart = queue.length > 0 && !["running", "pausing", "stopping"].includes(runtime.state) && !(auth.required && !auth.authenticated);
+    const canStart = queue.length > 0 && !["running", "pausing", "stopping"].includes(runtime.state);
     const isPaused = runtime.state === "paused";
-    const authBlockCopy = auth.required && !auth.authenticated
-        ? formatAuthToast(auth) || auth.message || "Login required before starting."
-        : "";
     const statusCopy = runtime.state === "error"
         ? (runtime.last_error || "Pyla stopped with an error.")
         : runtime.state === "pausing"
@@ -416,35 +458,37 @@ function renderDashboard() {
             : runtime.state === "stopping"
                 ? "Pyla is shutting down. This should only take a few seconds."
                 : isPaused
-                    ? "Pyla is paused in the lobby. Press Start to resume."
+                    ? "Pyla is paused. Press Start to resume."
                     : canStart
                         ? "Queue is ready. Start PylaAI from here."
-                        : authBlockCopy
-                            ? authBlockCopy
-                            : queue.length
-                                ? "Resolve runtime state before starting."
+                        : queue.length
+                            ? "Resolve the current runtime state before starting."
                             : "Add at least one brawler to the queue before starting.";
 
     let runtimePanel = `
         <button id="startRuntimeBtn" class="btn btn-primary btn-huge ${canStart ? "" : "is-disabled"}">
-            ${iconMarkup("play")}
-            <span>Start</span>
+            ${iconMarkup("play")}<span>Start</span>
         </button>
         <p class="runtime-note ${runtime.state === "error" ? "runtime-error" : ""}">${escapeHtml(statusCopy)}</p>
         ${!queue.length ? '<button id="goToBrawlersBtn" class="btn" style="margin-top: 12px;">Go to Brawlers</button>' : ''}
     `;
 
-    if (["running", "pausing"].includes(runtime.state)) {
+    if (runtime.state === "stopping") {
+        runtimePanel = `
+            <button class="btn btn-huge runtime-transition-button is-stopping" type="button" disabled aria-live="polite">
+                <span class="runtime-transition-icon">${iconMarkup("stop")}</span><span>Stopping…</span>
+            </button>
+            <p class="runtime-note">${escapeHtml(statusCopy)}</p>`;
+    } else if (["running", "pausing"].includes(runtime.state)) {
         runtimePanel = `
             <div class="runtime-live-shell">
                 <h3 class="runtime-live-title">${runtime.state === "pausing" ? "PylaAI is pausing" : "PylaAI is currently running"}</h3>
                 <p class="runtime-note">${escapeHtml(statusCopy)}</p>
                 <div class="runtime-action-grid">
-                    <button id="pauseRuntimeBtn" class="btn btn-primary btn-runtime-action ${runtime.state === "pausing" ? "is-disabled" : ""}">${iconMarkup("pause")} Pause</button>
+                    <button id="pauseRuntimeBtn" class="btn btn-primary btn-runtime-action ${runtime.state === "pausing" ? "runtime-transition-button is-pausing is-disabled" : ""}">${iconMarkup("pause")} Pause</button>
                     <button id="stopRuntimeBtn" class="btn btn-runtime-action">${iconMarkup("stop")} Stop</button>
                 </div>
-            </div>
-        `;
+            </div>`;
     } else if (isPaused) {
         runtimePanel = `
             <div class="runtime-live-shell">
@@ -454,53 +498,112 @@ function renderDashboard() {
                     <button id="resumeRuntimeBtn" class="btn btn-primary btn-runtime-action">${iconMarkup("play")} Start</button>
                     <button id="stopRuntimeBtn" class="btn btn-runtime-action">${iconMarkup("stop")} Stop</button>
                 </div>
-            </div>
-        `;
+            </div>`;
     }
 
+    const runtimeState = escapeHtml(String(runtime.state || "idle").replace(/[^a-z-]/gi, ""));
+    const emulatorPort = Number(state.bootstrap.settings?.general?.emulator_port || 5037);
     view.innerHTML = `
         <div class="dash-grid">
             <div class="hero-row">
                 <section class="panel panel-accent start-hero">
-                    <p class="eyebrow">Runtime</p>
                     ${runtimePanel}
+                    ${renderDashboardStats(runtime)}
                 </section>
-
                 <section class="panel act-ps">
                     <div class="panel-header compact-header">
                         <div>
                             <p class="ps-eyebrow">Active Playstyle</p>
-                            <h3>${escapeHtml(activePlaystyle?.name || "No playstyle selected")}</h3>
+                            <h3 data-i18n-skip>${escapeHtml(activePlaystyle?.name || "No playstyle selected")}</h3>
                             <p class="meta">${escapeHtml(metaLine(activePlaystyle))}</p>
                         </div>
                         <button id="browsePlaystylesBtn" class="btn">Browse</button>
                     </div>
-                    <p class="desc">${escapeHtml(activePlaystyle?.description || "Select a playstyle to surface its brawlers and gamemodes here.")}</p>
-                    ${renderPlaystyleVisual(activePlaystyle, true)}
+                    <p class="desc" data-i18n-skip>${escapeHtml(activePlaystyle?.description || "Select a playstyle to preview its brawlers and gamemodes here.")}</p>
+                    ${renderPlaystyleVisual(activePlaystyle, "dashboard")}
                 </section>
             </div>
 
-            <section class="panel support-panel">
-                <div class="support-copy">
-                    <div>
-                        <p class="eyebrow">Community</p>
-                        <h3 class="panel-title support-title">Free, open-source, and actively updated</h3>
-                        <p class="support-lead">Join the Discord for support and news. Patreon is where early-access builds and upcoming versions land first.</p>
+            <section class="panel profile-switcher-card premium-profile-preview">
+                <div class="profile-switcher-heading">
+                    <div class="profile-heading-copy">
+                        <p class="eyebrow">Profiles</p>
+                        <div class="profile-title-row"><h3 class="panel-title">One setup today, more with Premium</h3><span class="premium-badge-inline">Premium</span></div>
                     </div>
+                    <a class="btn btn-sm profile-add-btn premium-cta" href="https://pyla-ai.angelfirela.dev/premium" target="_blank" rel="noreferrer">Explore Premium</a>
                 </div>
-
-                <div class="link-row support-link-row">
-                    ${renderSupportLink(links.discord, "Discord", "Get help, announcements, and community discussion")}
-                    ${renderSupportLink(links.patreon, "Patreon", "Support PylaAI and get exclusive features and early access to newer versions")}
+                <div class="profile-list premium-profile-list">
+                    <div class="profile-entry is-active">
+                        <div class="profile-entry-main">
+                            <span class="profile-entry-name">Public profile</span>
+                            <span class="profile-entry-details"><span class="profile-runtime-status status-${runtimeState}"><span class="profile-status-dot"></span>${escapeHtml(runtimeLabel(runtime))}</span><span class="profile-port-summary">ADB ${emulatorPort}</span></span>
+                        </div>
+                        <span class="profile-active-label">Active</span>
+                    </div>
+                    <button class="profile-entry premium-profile-locked premium-locked-action" type="button">
+                        <div class="profile-entry-main"><span class="profile-entry-name">Second emulator profile</span><span class="profile-entry-details">Separate queue, settings, history and runtime</span></div><span class="premium-profile-lock">Premium</span>
+                    </button>
+                    <button class="profile-entry premium-profile-locked premium-locked-action" type="button">
+                        <div class="profile-entry-main"><span class="profile-entry-name">Additional profile</span><span class="profile-entry-details">Run independent account configurations</span></div><span class="premium-profile-lock">Premium</span>
+                    </button>
                 </div>
             </section>
-        </div>
-    `;
+        </div>`;
 
     document.getElementById("browsePlaystylesBtn")?.addEventListener("click", () => setView("playstyles"));
     document.getElementById("goToBrawlersBtn")?.addEventListener("click", () => setView("queue"));
     bindRuntimeButtons();
+    updateSessionTimer();
 }
+
+function renderDashboardStats(runtime) {
+    const showSessionTime = Boolean(runtime?.is_running && runtime?.session_started_at);
+    if (!showSessionTime) return "";
+
+    const currentSession = state.bootstrap.history?.session_summary;
+    const summaryMatchesRuntime = currentSession?.active
+        && Number(currentSession.started_at) === Number(runtime.session_started_at);
+    const summary = summaryMatchesRuntime
+        ? currentSession
+        : { win_rate: 0, trophy_delta: 0 };
+    const trophyDelta = Number(summary.trophy_delta || 0);
+
+    return `
+        <div class="dashboard-runtime-stats has-session">
+            <div class="dashboard-runtime-stat session-stat">
+                <span>Session Time</span>
+                <strong id="dashboardSessionTime">${formatSessionDuration(runtime.session_started_at)}</strong>
+            </div>
+            <div class="dashboard-runtime-stat">
+                <span>Session Win Rate</span>
+                <strong>${formatPercent(summary.win_rate)}</strong>
+            </div>
+            <div class="dashboard-runtime-stat trophy-stat ${trophyDelta < 0 ? "negative" : "positive"}">
+                <span>Trophies Gained</span>
+                <strong>${formatSignedNumber(trophyDelta)} ${trophyIconMarkup()}</strong>
+            </div>
+        </div>
+    `;
+}
+
+function formatSessionDuration(startedAt) {
+    const elapsedSeconds = Math.max(0, Math.floor(Date.now() / 1000 - Number(startedAt || 0)));
+    const hours = Math.floor(elapsedSeconds / 3600);
+    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+    const seconds = elapsedSeconds % 60;
+    return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function updateSessionTimer() {
+    const timer = document.getElementById("dashboardSessionTime");
+    const runtime = state.bootstrap?.runtime;
+    if (!timer || !runtime?.is_running || !runtime?.session_started_at) return;
+    timer.textContent = formatSessionDuration(runtime.session_started_at);
+}
+
+
+
+
 
 function renderSupportLink(link, title, subtitle = "") {
     return `
@@ -537,11 +640,11 @@ function formatSettingValue(field, value) {
 }
 
 function getPlayerPillState() {
-    if (!state.bootstrap?.auth?.early_access) {
+    if (!state.bootstrap?.auth?.premium) {
         return {
-            className: "early-access-locked",
+            className: "premium-locked",
             title: "Premium Required",
-            detail: "Get Premium to sync live stats from Brawl Stars API.",
+            detail: "Get premium to sync live stats from Brawl Stars API.",
         };
     }
 
@@ -577,17 +680,36 @@ function getPlayerPillState() {
 
 function renderQueue() {
     const view = document.getElementById("view-queue");
-    const selectedBrawler = state.selectedBrawler || state.bootstrap.brawlers[0]?.name || "";
+    const hasValidPlayerInfo = hasLivePlayerStats();
+    if (["trophies", "win_streak", "power_level"].includes(state.brawlerSort)
+        && (!state.bootstrap?.auth?.premium || !hasValidPlayerInfo)) {
+        state.brawlerSort = "alphabetical";
+        setStorageItem("brawlerSort", state.brawlerSort);
+    }
+    const visibleBrawlers = getVisibleBrawlers();
+
+    let selectedBrawler = state.selectedBrawler;
+    if (selectedBrawler && !visibleBrawlers.some((item) => item.name === selectedBrawler)) {
+        selectedBrawler = "";
+    }
+    if (!selectedBrawler && visibleBrawlers.length > 0) {
+        selectedBrawler = visibleBrawlers[0].name;
+    }
+    state.selectedBrawler = selectedBrawler;
+
     const selectedCard = state.bootstrap.brawlers.find((item) => item.name === selectedBrawler);
-    const hasValidPlayerInfo = Boolean(state.playerInfo.player_tag && Object.keys(state.playerInfo.stats || {}).length);
     const playerPill = getPlayerPillState();
     const defaultTarget = Number(state.bootstrap.settings.general.default_trophy_target || 1000);
     const playOrder = state.bootstrap.settings.general.play_order || "in_order";
-    const pushAllButton = !state.bootstrap?.auth?.early_access
-        ? `<button id="pushAllQueueLockedBtn" class="btn btn-locked ea-locked-action" type="button">${iconMarkup("queue")} Push All to ${defaultTarget} <span class="ea-lock-icon">🔒</span></button>`
+    const dynamicSortsLocked = !state.bootstrap?.auth?.premium;
+    const targetHelp = `<span class="tooltip-anchor push-all-help" data-tooltip="Change this amount by editing Default Trophy Target in Settings." aria-label="How to change the Push All target">?</span>`;
+    const pushAllButton = !state.bootstrap?.auth?.premium
+        ? `<div class="push-all-control"><button id="pushAllQueueLockedBtn" class="btn btn-locked premium-locked-action" type="button">${iconMarkup("queue")} Push All to ${defaultTarget} <span class="premium-lock-icon">🔒</span></button>${targetHelp}</div>`
         : hasValidPlayerInfo
-            ? `<button id="pushAllQueueBtn" class="btn" type="button">${iconMarkup("queue")} Push All to ${defaultTarget}</button>`
+            ? `<div class="push-all-control"><button id="pushAllQueueBtn" class="btn" type="button">${iconMarkup("queue")} Push All to ${defaultTarget}</button>${targetHelp}</div>`
             : "";
+    state.brawlerScrollbarCleanup?.();
+    state.brawlerScrollbarCleanup = null;
 
     view.innerHTML = `
         <div class="brawlers-layout">
@@ -610,15 +732,29 @@ function renderQueue() {
                             <span>Search Brawlers</span>
                             <input id="brawlerSearch" type="search" placeholder="Search by brawler name" value="${escapeHtml(state.brawlerSearch)}">
                         </label>
-                        <label class="input-group ${!state.bootstrap?.auth?.early_access ? "disabled-early-access" : ""}">
-                            <span>Player Tag ${!state.bootstrap?.auth?.early_access ? `<span class="ea-badge">Premium</span>` : ""}</span>
-                            <input id="playerTagInput" type="text" placeholder="${!state.bootstrap?.auth?.early_access ? "Locked - Premium Only" : "#PLAYER"}" value="${!state.bootstrap?.auth?.early_access ? "" : escapeHtml(formatPlayerTagInput(state.bootstrap.settings.general.player_tag || ""))}" ${!state.bootstrap?.auth?.early_access ? "disabled" : ""}>
+                        ${pushAllButton}
+                        <label class="input-group ${!state.bootstrap?.auth?.premium ? "disabled-premium" : ""}">
+                            <span>Player Tag ${!state.bootstrap?.auth?.premium ? `<span class="premium-badge">Premium</span>` : ""}</span>
+                            <input id="playerTagInput" type="text" placeholder="${!state.bootstrap?.auth?.premium ? "Locked - Premium Only" : "#PLAYER"}" value="${!state.bootstrap?.auth?.premium ? "" : escapeHtml(formatPlayerTagInput(state.bootstrap.settings.general.player_tag || ""))}" ${!state.bootstrap?.auth?.premium ? "disabled" : ""}>
                         </label>
                     </div>
                     <div class="queue-toolbar-bottom">
-                        <div class="toolbar-actions queue-load-actions">
-                            <button id="loadQueueBtn" class="btn" type="button">${iconMarkup("import")} Load Queue</button>
-                            ${pushAllButton}
+                        <div class="toolbar-actions brawler-sort-actions">
+                            <div class="input-group brawler-sort-control">
+                                <span>Sorting</span>
+                                <div class="brawler-sort-row">
+                                    <select id="brawlerSortSelect">
+                                        <option value="alphabetical" ${state.brawlerSort === "alphabetical" ? "selected" : ""}>By name</option>
+                                        <option value="rarity" ${state.brawlerSort === "rarity" ? "selected" : ""}>By rarity</option>
+                                        <option value="trophies" ${state.brawlerSort === "trophies" ? "selected" : ""}>${dynamicSortsLocked ? "🔒 " : ""}By trophies</option>
+                                        <option value="win_streak" ${state.brawlerSort === "win_streak" ? "selected" : ""}>${dynamicSortsLocked ? "🔒 " : ""}By win streak</option>
+                                        <option value="power_level" ${state.brawlerSort === "power_level" ? "selected" : ""}>${dynamicSortsLocked ? "🔒 " : ""}By power level</option>
+                                    </select>
+                                    <button id="brawlerSortDirectionBtn" class="sort-direction-btn" type="button" title="${state.brawlerSortDirection === "asc" ? "Ascending — click for descending" : "Descending — click for ascending"}" aria-label="${state.brawlerSortDirection === "asc" ? "Sort descending" : "Sort ascending"}">
+                                        ${state.brawlerSortDirection === "asc" ? "↑" : "↓"}
+                                    </button>
+                                </div>
+                            </div>
                             <input id="queueFileInput" type="file" accept=".json,application/json" class="hidden">
                         </div>
                         <label class="input-group play-order-control">
@@ -632,8 +768,13 @@ function renderQueue() {
                     </div>
                 </div>
 
-                <div id="brawlerGrid" class="grid-select">
-                    ${renderBrawlerCards()}
+                <div class="brawler-grid-shell">
+                    <div id="brawlerGrid" class="grid-select">
+                        ${renderBrawlerCards()}
+                    </div>
+                    <div id="brawlerGridScrollbar" class="app-scrollbar brawler-grid-scrollbar" role="scrollbar" aria-controls="brawlerGrid" aria-orientation="vertical" aria-label="Scroll brawlers" tabindex="0">
+                        <div id="brawlerGridScrollbarThumb" class="app-scrollbar-thumb"></div>
+                    </div>
                 </div>
             </section>
 
@@ -644,22 +785,51 @@ function renderQueue() {
     `;
 
     bindQueueEvents();
+    renderQueueDock();
 }
 
 function renderBrawlerCards() {
     const query = state.brawlerSearch.trim().toLowerCase();
-    const filtered = state.bootstrap.brawlers.filter((item) => item.name.toLowerCase().includes(query));
+    let filtered = getVisibleBrawlers();
+    filtered = filtered.filter((item) => item.name.toLowerCase().includes(query));
+
+    const direction = state.brawlerSortDirection === "desc" ? -1 : 1;
+    const statSort = ["trophies", "win_streak", "power_level"].includes(state.brawlerSort);
+    filtered = [...filtered].sort((left, right) => {
+        let comparison = 0;
+        if (state.brawlerSort === "rarity") {
+            comparison = (BRAWLER_RARITIES[left.rarity]?.order ?? 999) - (BRAWLER_RARITIES[right.rarity]?.order ?? 999);
+        } else if (statSort) {
+            comparison = Number(getLiveBrawlerStats(left.name)?.[state.brawlerSort] ?? -1)
+                - Number(getLiveBrawlerStats(right.name)?.[state.brawlerSort] ?? -1);
+        } else {
+            comparison = left.name.localeCompare(right.name);
+        }
+        return comparison === 0 ? left.name.localeCompare(right.name) : comparison * direction;
+    });
 
     if (!filtered.length) {
         return `<div class="empty-state wide-empty">No brawlers match the current search.</div>`;
     }
 
-    return filtered.map((item) => `
+    return filtered.map((item) => {
+        const liveValue = statSort ? getLiveBrawlerStats(item.name)?.[state.brawlerSort] : null;
+        const rarityStyle = state.brawlerSort === "rarity" ? ` style="color: ${BRAWLER_RARITIES[item.rarity]?.color || BRAWLER_RARITIES.Unknown.color}"` : "";
+        const value = Number(liveValue ?? 0);
+        const valueMarkup = state.brawlerSort === "trophies"
+            ? `<small class="brawler-sort-value">${value}${trophyIconMarkup()}</small>`
+            : state.brawlerSort === "win_streak"
+                ? `<small class="brawler-sort-value">${value} WS</small>`
+                : state.brawlerSort === "power_level"
+                    ? `<small class="brawler-sort-value">Lvl ${value}</small>`
+                    : "";
+        return `
         <button class="b-cell ${item.name === state.selectedBrawler ? "active" : ""}" data-brawler="${escapeHtml(item.name)}">
             <img src="${escapeHtml(item.icon_url)}" alt="${escapeHtml(item.name)}">
-            <span>${escapeHtml(item.name)}</span>
+            <span data-i18n-skip${rarityStyle}>${escapeHtml(item.name)}</span>
+            ${valueMarkup}
         </button>
-    `).join("");
+    `}).join("");
 }
 
 function renderSelectedBrawlerEditor(brawler) {
@@ -679,7 +849,7 @@ function renderSelectedBrawlerEditor(brawler) {
                 <img class="brawler-detail-art" src="${escapeHtml(brawler.icon_url)}" alt="${escapeHtml(brawler.name)}">
                 <div>
                     <p class="eyebrow">Selected Brawler</p>
-                    <h3 class="panel-title">${escapeHtml(brawler.name)}</h3>
+                    <h3 class="panel-title" data-i18n-skip>${escapeHtml(brawler.name)}</h3>
                     <p class="meta-line">${state.playerInfo.player_name ? `Live values synced from ${escapeHtml(state.playerInfo.player_name)}` : "Manual values are available if you do not use a player tag."}</p>
                 </div>
             </div>
@@ -690,15 +860,14 @@ function renderSelectedBrawlerEditor(brawler) {
             </div>
 
             <div class="editor-fields">
-                <label class="input-group">
-                    <span>Target Total</span>
-                    <input id="queuePushUntil" type="number" min="0" value="${existing?.push_until ?? defaultTarget}">
-                </label>
-
                 ${currentType === "trophies" ? `
                     <label class="input-group">
                         <span>Current Trophies</span>
                         <input id="queueTrophies" type="number" min="0" value="${currentTrophies}">
+                    </label>
+                    <label class="input-group target-total-field">
+                        <span>Target Total</span>
+                        <input id="queuePushUntil" type="number" min="0" value="${existing?.push_until ?? defaultTarget}">
                     </label>
                     <label class="input-group">
                         <span>Current Win Streak</span>
@@ -708,6 +877,10 @@ function renderSelectedBrawlerEditor(brawler) {
                     <label class="input-group">
                         <span>Current Wins</span>
                         <input id="queueWins" type="number" min="0" value="${currentWins}">
+                    </label>
+                    <label class="input-group target-total-field">
+                        <span>Target Total</span>
+                        <input id="queuePushUntil" type="number" min="0" value="${existing?.push_until ?? defaultTarget}">
                     </label>
                 `}
             </div>
@@ -730,38 +903,47 @@ function renderPlaystyles() {
     const view = document.getElementById("view-playstyles");
     const active = getActivePlaystyle();
 
+    state.playstyleScrollbarCleanup?.();
+    state.playstyleScrollbarCleanup = null;
+
     view.innerHTML = `
         <div class="ps-page">
-            <section class="panel panel-accent playstyle-selected-shell">
-                <div class="playstyle-selected-head">
-                    <p class="eyebrow">Selected</p>
-                </div>
-                <div class="playstyle-selected-card-wrap">
-                    ${renderPlaystyleShowcaseCard(active, true)}
-                </div>
-            </section>
-
-            <section class="toolbar-strip">
-                <div class="tb-search grow">
-                    <input id="playstyleSearch" type="search" placeholder="Search by playstyle, brawler, or gamemode" value="${escapeHtml(state.playstyleSearch)}">
-                </div>
-                <div class="toolbar-actions">
-                    <button id="importPlaystyleBtn" class="btn">${iconMarkup("import")} Import</button>
-                    <input id="playstyleFileInput" type="file" accept=".pyla" class="hidden">
-                </div>
-            </section>
-
-            <section class="ps-lib-wrap">
-                <p class="ps-lib-title">Library</p>
-                <div class="ps-library-shell">
-                    <div id="playstyleLibrary" class="ps-library">
-                        ${renderPlaystyleLibrary(active)}
+            <div class="ps-workspace">
+                <section class="panel panel-accent playstyle-selected-shell">
+                    <div class="playstyle-selected-head">
+                        <p class="eyebrow">Selected playstyle</p>
                     </div>
-                    <div id="playstyleLibraryScrollbar" class="app-scrollbar playstyle-library-scrollbar" role="scrollbar" aria-controls="playstyleLibrary" aria-orientation="vertical" aria-label="Scroll playstyle library" tabindex="0">
-                        <div id="playstyleLibraryScrollbarThumb" class="app-scrollbar-thumb"></div>
+                    <div class="playstyle-selected-card-wrap">
+                        ${renderPlaystyleShowcaseCard(active, true)}
                     </div>
-                </div>
-            </section>
+                </section>
+
+                <section class="ps-library-column">
+                    <div class="toolbar-strip ps-toolbar">
+                        <div>
+                            <p class="eyebrow">Library</p>
+                            <div class="tb-search grow">
+                                <input id="playstyleSearch" type="search" placeholder="Search playstyles, brawlers, or modes" value="${escapeHtml(state.playstyleSearch)}">
+                            </div>
+                        </div>
+                        <div class="toolbar-actions">
+                            <button id="importPlaystyleBtn" class="btn">${iconMarkup("import")} Import</button>
+                            <input id="playstyleFileInput" type="file" accept=".pyla" class="hidden">
+                        </div>
+                    </div>
+
+                    <div class="ps-lib-wrap">
+                        <div class="ps-library-shell">
+                            <div id="playstyleLibrary" class="ps-library">
+                                ${renderPlaystyleLibrary(active)}
+                            </div>
+                            <div id="playstyleLibraryScrollbar" class="app-scrollbar playstyle-library-scrollbar" role="scrollbar" aria-controls="playstyleLibrary" aria-orientation="vertical" aria-label="Scroll playstyle library" tabindex="0">
+                                <div id="playstyleLibraryScrollbarThumb" class="app-scrollbar-thumb"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
         </div>
     `;
 
@@ -805,17 +987,17 @@ function renderPlaystyleShowcaseCard(playstyle, large = false) {
     }
 
     const description = playstyle.description || "No description provided.";
-    const canExpandDescription = description.length > 110;
+    const canExpandDescription = !large && description.length > 110;
     const descriptionExpanded = state.expandedPlaystyleDescriptions.has(playstyle.filename);
 
     return `
         <div class="playstyle-showcase ${large ? "selected" : ""} ${descriptionExpanded ? "description-expanded" : ""}">
             <div class="playstyle-showcase-head">
-                <h4>${escapeHtml(playstyle.name)}</h4>
+                <h4 data-i18n-skip>${escapeHtml(playstyle.name)}</h4>
                 <span>${escapeHtml(metaLine(playstyle))}</span>
                 <div class="playstyle-description-wrap">
-                    <p class="playstyle-card-description ${canExpandDescription ? "is-clamped" : ""} ${descriptionExpanded ? "is-expanded" : ""}">${escapeHtml(description)}</p>
-                    ${canExpandDescription ? `<p class="playstyle-description-hover" aria-hidden="true">${escapeHtml(description)}</p>` : ""}
+                    <p class="playstyle-card-description ${canExpandDescription ? "is-clamped" : ""} ${descriptionExpanded ? "is-expanded" : ""}" data-i18n-skip>${escapeHtml(description)}</p>
+                    ${canExpandDescription ? `<p class="playstyle-description-hover" aria-hidden="true" data-i18n-skip>${escapeHtml(description)}</p>` : ""}
                 </div>
                 ${canExpandDescription ? `
                     <button class="playstyle-read-more" type="button" data-toggle-playstyle-description="${escapeHtml(playstyle.filename)}" aria-expanded="${descriptionExpanded}">
@@ -823,12 +1005,13 @@ function renderPlaystyleShowcaseCard(playstyle, large = false) {
                     </button>
                 ` : ""}
             </div>
-            ${renderPlaystyleVisual(playstyle, large)}
+            ${renderPlaystyleVisual(playstyle, large ? "selected" : "library")}
         </div>
     `;
 }
 
-function renderPlaystyleVisual(playstyle, large = false) {
+function renderPlaystyleVisual(playstyle, variant = "library") {
+    const large = variant !== "library";
     if (!playstyle) {
         return `<div class="ps-vis ${large ? "large" : ""}"><div class="ps-univ">No playstyle selected</div></div>`;
     }
@@ -843,27 +1026,58 @@ function renderPlaystyleVisual(playstyle, large = false) {
     }
 
     return `
-        <div class="ps-vis ${large ? "large" : ""}">
+        <div class="ps-vis ${large ? "large" : ""} ${variant === "dashboard" ? "dashboard-visual" : ""}">
             ${showBrawlers ? `<div class="ps-part">${renderPlaystyleBrawlerThumbs(brawlers, large)}</div>` : ""}
             ${showBrawlers && showGamemodes ? `<div class="ps-div"></div>` : ""}
-            ${showGamemodes ? `<div class="ps-part">${renderPlaystyleGamemodePills(gamemodes)}</div>` : ""}
+            ${showGamemodes ? `<div class="ps-part ps-mode-part">${renderPlaystyleGamemodeLogos(gamemodes, large)}</div>` : ""}
         </div>
     `;
 }
 
 function renderPlaystyleBrawlerThumbs(brawlers, large) {
-    return brawlers.slice(0, 6).map((name) => {
+    const limit = large ? 8 : 3;
+    const visible = brawlers.slice(0, limit);
+    const overflow = brawlers.length - visible.length;
+    const items = visible.map((name) => {
         const entry = state.bootstrap.brawlers.find((item) => item.name.toLowerCase() === String(name).toLowerCase());
         if (!entry) {
             return `<div class="ps-m-pill">${escapeHtml(String(name))}</div>`;
         }
 
         return `<img class="ps-b-img ${large ? "large" : ""}" src="${escapeHtml(entry.icon_url)}" alt="${escapeHtml(entry.name)}">`;
-    }).join("");
+    });
+    if (overflow > 0) {
+        items.push(renderPlaystyleOverflow(overflow, brawlers.slice(limit)));
+    }
+    return items.join("");
 }
 
-function renderPlaystyleGamemodePills(gamemodes) {
-    return gamemodes.slice(0, 4).map((mode) => `<span class="ps-m-pill">${escapeHtml(GAMEMODE_LABELS[mode] || String(mode))}</span>`).join("");
+function renderPlaystyleGamemodeLogos(gamemodes, large) {
+    const limit = large ? 6 : 2;
+    const visible = gamemodes.slice(0, limit);
+    const overflow = gamemodes.length - visible.length;
+    const items = visible.map((rawMode) => {
+        const mode = normalizeGamemodeKey(rawMode);
+        const label = GAMEMODE_LABELS[mode] || String(rawMode).replaceAll("_", " ");
+        if (!GAMEMODE_LOGOS.has(mode)) {
+            return `<span class="ps-m-pill" data-tooltip="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+        }
+        return `<span class="ps-mode-logo ${large ? "large" : ""}" data-tooltip="${escapeHtml(label)}"><img src="/api/assets/support/gamemodes_logos/${escapeHtml(mode)}.webp" alt="${escapeHtml(label)}"></span>`;
+    });
+    if (overflow > 0) {
+        items.push(renderPlaystyleOverflow(overflow, gamemodes.slice(limit).map((mode) => GAMEMODE_LABELS[normalizeGamemodeKey(mode)] || mode)));
+    }
+    return items.join("");
+}
+
+function normalizeGamemodeKey(value) {
+    const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    return normalized === "brawl_ball" ? "brawlball" : normalized;
+}
+
+function renderPlaystyleOverflow(count, hiddenItems) {
+    const tooltip = hiddenItems.map((item) => String(item).replaceAll("_", " ")).join(", ");
+    return `<span class="ps-overflow" data-tooltip="${escapeHtml(tooltip)}" aria-label="${count} more: ${escapeHtml(tooltip)}">+${count}</span>`;
 }
 
 function renderHistory() {
@@ -873,21 +1087,51 @@ function renderHistory() {
     view.innerHTML = `
         <section class="panel">
             <div class="panel-header history-head">
-                    <div>
-                        <p class="eyebrow">Match History</p>
-                        <h3 class="panel-title history-total">${summary.total_matches} total matches</h3>
-                        <p class="meta-line history-summary-meta">${summary.wins} wins | ${summary.losses} losses | ${formatPercent(summary.win_rate)} win rate | ${formatPercent(summary.loss_rate)} loss rate</p>
+                <div class="history-summary-hero">
+                    <div class="history-total"><strong id="historyTotalMatches">${summary.total_matches}</strong><span>matches tracked</span></div>
+                    <div class="history-summary-stats">
+                        <span><strong id="historyTotalWins">${summary.wins}</strong> wins</span>
+                        <span><strong id="historyTotalLosses">${summary.losses}</strong> losses</span>
+                        <span><strong id="historyTotalWinRate">${formatPercent(summary.win_rate)}</strong> win rate</span>
                     </div>
+                </div>
                 <div class="toolbar-actions history-actions">
+                    <div class="history-date-picker" id="historyDatePicker">
+                        <button id="historyDateTrigger" class="btn history-date-trigger" type="button" aria-expanded="false" aria-controls="historyDatePopover">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4M16 2v4M3 9h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>
+                            <span>${escapeHtml(historyDateRangeLabel())}</span>
+                        </button>
+                        <div id="historyDatePopover" class="history-date-popover hidden">
+                            <strong>Date range</strong>
+                            <div class="history-date-fields" role="group" aria-label="Filter match history by date">
+                                <label class="history-date-field">
+                                    <span>From date</span>
+                                    <input id="historyStartDate" type="date" value="${escapeHtml(state.historyStartDate)}" max="${escapeHtml(state.historyEndDate)}">
+                                </label>
+                                <label class="history-date-field">
+                                    <span>To date</span>
+                                    <input id="historyEndDate" type="date" value="${escapeHtml(state.historyEndDate)}" min="${escapeHtml(state.historyStartDate)}">
+                                </label>
+                            </div>
+                            <span class="history-date-hint">Dates are inclusive.</span>
+                            <div class="history-date-buttons">
+                                <button id="historyDateClear" class="btn btn-sm" type="button">Clear</button>
+                                <button id="historyDateApply" class="btn btn-sm btn-primary" type="button">Apply dates</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="tb-search compact-search">
                         <input id="historySearch" type="search" placeholder="Filter by brawler" value="${escapeHtml(state.historySearch)}">
                     </div>
-                    <select id="historySort" aria-label="Sort match history">
-                        <option value="matches" ${state.historySort === "matches" ? "selected" : ""}>Matches</option>
-                        <option value="recent" ${state.historySort === "recent" ? "selected" : ""}>Recently played</option>
-                        <option value="winrate" ${state.historySort === "winrate" ? "selected" : ""}>Win Rate</option>
-                        <option value="name" ${state.historySort === "name" ? "selected" : ""}>Name</option>
-                    </select>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <select id="historySort" aria-label="Sort match history">
+                            <option value="matches" ${state.historySort === "matches" ? "selected" : ""}>Matches</option>
+                            <option value="recent" ${state.historySort === "recent" ? "selected" : ""}>Recently played</option>
+                            <option value="winrate" ${state.historySort === "winrate" ? "selected" : ""}>Win Rate</option>
+                            <option value="name" ${state.historySort === "name" ? "selected" : ""}>Name</option>
+                        </select>
+                        ${renderSyncButton("general", "history_sort")}
+                    </div>
                 </div>
             </div>
 
@@ -907,10 +1151,72 @@ function renderHistory() {
 
     document.getElementById("historySort")?.addEventListener("change", (event) => {
         state.historySort = event.target.value;
+        setStorageItem("historySort", state.historySort);
         const grid = document.querySelector("#view-history .hist-grid");
         if (grid) {
             grid.innerHTML = renderHistoryGrid();
         }
+        const generalSettings = { ...state.bootstrap.settings.general, history_sort: state.historySort };
+        fetchJSON("/api/settings/general", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(generalSettings),
+        }, true).then(result => {
+            if (result && result.ok !== false) {
+                state.bootstrap.settings.general = result;
+            }
+        }).catch(err => console.error("Failed to save history sort preference to server:", err));
+    });
+
+    document.getElementById("historyDateTrigger")?.addEventListener("click", () => {
+        const trigger = document.getElementById("historyDateTrigger");
+        const popover = document.getElementById("historyDatePopover");
+        if (!trigger || !popover) return;
+        const willOpen = popover.classList.contains("hidden");
+        popover.classList.toggle("hidden", !willOpen);
+        trigger.setAttribute("aria-expanded", String(willOpen));
+    });
+
+    document.getElementById("historyDateApply")?.addEventListener("click", async () => {
+        const startDate = document.getElementById("historyStartDate")?.value || "";
+        const endDate = document.getElementById("historyEndDate")?.value || "";
+        if (startDate && endDate && startDate > endDate) {
+            showToast("The start date must be on or before the end date.", "error");
+            return;
+        }
+        await applyHistoryDateFilter(startDate, endDate);
+        closeHistoryDatePicker();
+        showToast("Date filter applied.", "success");
+    });
+
+    document.getElementById("historyDateClear")?.addEventListener("click", async () => {
+        const startInput = document.getElementById("historyStartDate");
+        const endInput = document.getElementById("historyEndDate");
+        if (startInput) startInput.value = "";
+        if (endInput) endInput.value = "";
+        await applyHistoryDateFilter("", "");
+        closeHistoryDatePicker();
+        showToast("Date filter cleared.", "success");
+    });
+
+    const startDateInput = document.getElementById("historyStartDate");
+    const endDateInput = document.getElementById("historyEndDate");
+    startDateInput?.addEventListener("change", () => {
+        if (endDateInput) endDateInput.min = startDateInput.value;
+    });
+    endDateInput?.addEventListener("change", () => {
+        if (startDateInput) startDateInput.max = endDateInput.value;
+    });
+
+    document.removeEventListener("click", handleHistoryDatePickerOutsideClick);
+    document.addEventListener("click", handleHistoryDatePickerOutsideClick);
+
+    view.querySelectorAll(".btn-sync-toggle").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await toggleSettingSync(button);
+        });
     });
 
     view.removeEventListener("click", handleHistoryCardClick);
@@ -919,19 +1225,83 @@ function renderHistory() {
     view.addEventListener("keydown", handleHistoryCardKeydown);
 }
 
+function historyDateRangeLabel() {
+    if (state.historyStartDate && state.historyEndDate) {
+        return `${state.historyStartDate} – ${state.historyEndDate}`;
+    }
+    if (state.historyStartDate) return `≥ ${state.historyStartDate}`;
+    if (state.historyEndDate) return `≤ ${state.historyEndDate}`;
+    return "Date range";
+}
+
+function closeHistoryDatePicker() {
+    document.getElementById("historyDatePopover")?.classList.add("hidden");
+    document.getElementById("historyDateTrigger")?.setAttribute("aria-expanded", "false");
+}
+
+function handleHistoryDatePickerOutsideClick(event) {
+    const picker = document.getElementById("historyDatePicker");
+    if (picker && !picker.contains(event.target)) closeHistoryDatePicker();
+}
+
+async function applyHistoryDateFilter(startDate, endDate) {
+    state.historyStartDate = startDate;
+    state.historyEndDate = endDate;
+    setStorageItem("historyStartDate", startDate);
+    setStorageItem("historyEndDate", endDate);
+    const triggerLabel = document.querySelector("#historyDateTrigger span");
+    if (triggerLabel) triggerLabel.textContent = historyDateRangeLabel();
+    closeHistoryDetails();
+
+    if (state.historyRefreshInFlight) {
+        await state.historyRefreshInFlight;
+    }
+    await refreshMatchHistory();
+}
+
 function getHistorySummary() {
     const items = state.bootstrap.history.items || [];
     const wins = items.reduce((total, item) => total + Number(item.wins || 0), 0);
     const losses = items.reduce((total, item) => total + Number(item.losses || 0), 0);
     const totalMatches = wins + losses;
+    const serverSummary = state.bootstrap.history.summary || {};
+    const hasServerSummary = ["total_matches", "wins", "losses"].every((key) =>
+        Number.isFinite(Number(serverSummary[key]))
+    );
 
-    return {
+    const derivedSummary = {
         total_matches: totalMatches,
         wins,
         losses,
         win_rate: totalMatches ? (wins / totalMatches) * 100 : 0,
         loss_rate: totalMatches ? (losses / totalMatches) * 100 : 0,
     };
+
+    return hasServerSummary
+        ? {
+            ...derivedSummary,
+            ...serverSummary,
+            total_matches: Number(serverSummary.total_matches),
+            wins: Number(serverSummary.wins),
+            losses: Number(serverSummary.losses),
+            win_rate: Number(serverSummary.win_rate ?? derivedSummary.win_rate),
+            loss_rate: Number(serverSummary.loss_rate ?? derivedSummary.loss_rate),
+        }
+        : derivedSummary;
+}
+
+function updateHistorySummary() {
+    const summary = getHistorySummary();
+    const values = {
+        historyTotalMatches: summary.total_matches,
+        historyTotalWins: summary.wins,
+        historyTotalLosses: summary.losses,
+        historyTotalWinRate: formatPercent(summary.win_rate),
+    };
+    Object.entries(values).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    });
 }
 
 function getFilteredHistoryItems() {
@@ -944,7 +1314,9 @@ function renderHistoryGrid() {
     const items = getFilteredHistoryItems();
     return items.length
         ? items.map(renderHistoryCard).join("")
-        : `<div class="empty-state wide-empty">No match history has been recorded yet.</div>`;
+        : `<div class="empty-state wide-empty">${state.historyStartDate || state.historyEndDate
+            ? "No matches were recorded in the selected date range."
+            : "No match history has been recorded yet."}</div>`;
 }
 
 function renderHistoryCard(item) {
@@ -955,7 +1327,7 @@ function renderHistoryCard(item) {
                 <div class="hist-identity">
                     <img src="${escapeHtml(item.icon_url)}" alt="${escapeHtml(item.brawler)}">
                     <div>
-                        <h4>${escapeHtml(item.brawler)}</h4>
+                        <h4 data-i18n-skip>${escapeHtml(item.brawler)}</h4>
                         <p class="meta-line history-tracked">${item.total_matches} tracked matches</p>
                     </div>
                 </div>
@@ -1007,6 +1379,7 @@ function openHistoryDetails(brawlerName) {
     if (!item) return;
 
     closeHistoryDetails();
+    state.activeHistoryBrawler = brawlerName;
     document.body.insertAdjacentHTML("beforeend", renderHistoryDetailOverlay(item));
     document.getElementById("historyDetailOverlay")?.addEventListener("click", (event) => {
         if (event.target === event.currentTarget) {
@@ -1016,6 +1389,76 @@ function openHistoryDetails(brawlerName) {
     bindHistoryChartRangeControls(item);
     scrollRecentChartToLatest();
     document.addEventListener("keydown", handleHistoryDetailKeydown);
+}
+
+function updateHistoryDetails(brawlerName) {
+    const item = (state.bootstrap.history.items || []).find((historyItem) => historyItem.brawler === brawlerName);
+    if (!item) {
+        closeHistoryDetails();
+        return;
+    }
+
+    const overlay = document.getElementById("historyDetailOverlay");
+    if (!overlay) return;
+
+    const shell = overlay.querySelector(".history-detail-shell");
+    if (shell) {
+        shell.innerHTML = `
+            <header class="history-detail-head">
+                <div class="history-detail-title">
+                    <img src="${escapeHtml(item.icon_url)}" alt="${escapeHtml(item.brawler)}">
+                    <div>
+                        <h3 data-i18n-skip>${escapeHtml(item.brawler)}</h3>
+                        <p class="meta-line">Last played ${escapeHtml(item.last_played || "Unknown")}</p>
+                    </div>
+                </div>
+                <div class="history-detail-actions">
+                    <div class="history-trophy-hero ${Number(item.trophy_delta || 0) < 0 ? "negative" : "positive"}">
+                        <span>${formatSignedNumber(Number(item.trophy_delta || 0))}</span>
+                        <img src="/api/assets/support/trophies_icon.png" alt="Trophies">
+                    </div>
+                </div>
+            </header>
+
+            <div class="history-detail-grid">
+                ${renderHistoryChartPanel(item)}
+
+                <aside class="history-insights-panel">
+                    <div class="history-kpi-grid">
+                        ${renderHistoryKpi("Current", item.current_trophies ?? "N/A")}
+                        ${renderHistoryKpi("Peak", item.peak_trophies ?? "N/A")}
+                        ${renderHistoryKpi("Win Rate", formatPercent(item.win_rate))}
+                        ${renderHistoryKpi("Best Streak", item.best_win_streak || 0)}
+                    </div>
+                </aside>
+            </div>
+
+            <div class="history-detail-bottom">
+                <section class="history-recent-panel">
+                    <div class="history-section-head">
+                        <h4>Recent results</h4>
+                    </div>
+                    ${renderHistoryResultGrid(item.trophy_points || [])}
+                </section>
+
+                <section class="history-playstyle-panel">
+                    <div class="history-section-head">
+                        <h4>Most used playstyles</h4>
+                    </div>
+                    <div class="history-playstyle-list">
+                        ${(item.playstyles || []).length ? item.playstyles.map((playstyle) => `
+                            <div class="history-playstyle-row">
+                                <span data-i18n-skip>${escapeHtml(playstyle.name)}</span>
+                                <strong>${playstyle.matches}</strong>
+                            </div>
+                        `).join("") : `<div class="empty-state">No playstyle data available.</div>`}
+                    </div>
+                </section>
+            </div>
+        `;
+        bindHistoryChartRangeControls(item);
+        scrollRecentChartToLatest();
+    }
 }
 
 function bindHistoryChartRangeControls(item) {
@@ -1043,6 +1486,7 @@ function scrollRecentChartToLatest() {
 }
 
 function closeHistoryDetails() {
+    state.activeHistoryBrawler = null;
     document.getElementById("historyDetailOverlay")?.remove();
     document.removeEventListener("keydown", handleHistoryDetailKeydown);
 }
@@ -1065,7 +1509,7 @@ function renderHistoryDetailOverlay(item) {
                     <div class="history-detail-title">
                         <img src="${escapeHtml(item.icon_url)}" alt="${escapeHtml(item.brawler)}">
                         <div>
-                            <h3>${escapeHtml(item.brawler)}</h3>
+                            <h3 data-i18n-skip>${escapeHtml(item.brawler)}</h3>
                             <p class="meta-line">Last played ${escapeHtml(item.last_played || "Unknown")}</p>
                         </div>
                     </div>
@@ -1105,7 +1549,7 @@ function renderHistoryDetailOverlay(item) {
                         <div class="history-playstyle-list">
                             ${(item.playstyles || []).length ? item.playstyles.map((playstyle) => `
                                 <div class="history-playstyle-row">
-                                    <span>${escapeHtml(playstyle.name)}</span>
+                                    <span data-i18n-skip>${escapeHtml(playstyle.name)}</span>
                                     <strong>${playstyle.matches}</strong>
                                 </div>
                             `).join("") : `<div class="empty-state">No playstyle data available.</div>`}
@@ -1222,12 +1666,11 @@ function renderHistoryResultTile(point) {
 
 function historyPointTooltip(point) {
     const delta = Number(point.delta || 0);
-    const deltaClass = delta < 0 ? "negative" : "positive";
     return [
         point.label || "Unknown time",
-        `<span class="tooltip-trophy-line ${deltaClass}">${formatSignedNumber(delta)} <img src="/api/assets/support/trophies_icon.png" alt=""></span>`,
-        `<span class="tooltip-trophy-line total">${point.value ?? "N/A"} <img src="/api/assets/support/trophies_icon.png" alt=""></span>`,
-    ].join("<br>");
+        `${formatSignedNumber(delta)} trophies`,
+        `${point.value ?? "N/A"} trophies total`,
+    ].join("\n");
 }
 
 function formatResultLabel(value) {
@@ -1238,6 +1681,11 @@ function renderSettings() {
     const view = document.getElementById("view-settings");
 
     view.innerHTML = `
+        <div class="settings-search-wrap">
+            ${iconMarkup("search")}
+            <input id="settingsSearch" class="settings-search" type="search" placeholder="Find a setting" aria-label="Search settings" value="${escapeHtml(state.settingsSearch || "")}">
+            <span id="settingsSearchStatus" class="settings-search-status" aria-live="polite"></span>
+        </div>
         <div class="set-grid">
             <section class="panel settings-section">
                 <div class="panel-header compact-header">
@@ -1248,7 +1696,10 @@ function renderSettings() {
                     <button class="btn-reset-settings" data-reset-section="general">Reset Settings</button>
                 </div>
                 <div class="settings-list">
-                    ${SETTINGS_META.general.map((field) => renderSettingField("general", field, state.bootstrap.settings.general[field.key])).join("")}
+                    ${SETTINGS_META.general.map((field) => `
+                        ${field.key === "auto_load_queue_on_startup" ? renderShowAllBrawlersPreference() : ""}
+                        ${renderSettingField("general", field, state.bootstrap.settings.general[field.key])}
+                    `).join("")}
                 </div>
             </section>
  
@@ -1307,6 +1758,26 @@ function renderSettings() {
     `;
 
     bindSettingsEvents();
+    applySettingsSearch(state.settingsSearch || "");
+}
+
+function renderShowAllBrawlersPreference() {
+    if (!state.bootstrap?.auth?.premium) {
+        return "";
+    }
+
+    return `
+        <div class="setting-row check-card check-card-right client-preference-row">
+            <div class="check-info">
+                <strong><label for="showAllBrawlersSetting">Show all brawlers</label></strong>
+                <label for="showAllBrawlersSetting"><span>Include locked brawlers in the Brawlers tab so their values can be entered manually.</span></label>
+            </div>
+            <label class="check-control" for="showAllBrawlersSetting">
+                <input id="showAllBrawlersSetting" type="checkbox" data-client-setting="showAllBrawlers" ${state.showAllBrawlers ? "checked" : ""}>
+                <span class="check-box"></span>
+            </label>
+        </div>
+    `;
 }
 
 function renderSettingField(section, field, value) {
@@ -1315,32 +1786,40 @@ function renderSettingField(section, field, value) {
     }
 
     if (field.type === "checkbox") {
-        const isEarlyAccessLocked = !state.bootstrap?.auth?.early_access && field.key === "advanced_debug_visuals";
+        const isPremiumLocked = !state.bootstrap?.auth?.premium && (field.key === "advanced_debug_visuals" || field.key === "recover_when_wrong_brawler_used");
         return `
-            <label class="setting-row check-card check-card-right ${isEarlyAccessLocked ? "setting-locked ea-locked-action" : ""}">
-                <span class="check-info">
-                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Premium</span>` : ""}</strong>
-                    <span>${escapeHtml(field.help)}</span>
-                </span>
-                <span class="check-control">
-                    <input type="checkbox" data-setting-section="${section}" data-setting-key="${field.key}" ${value && !isEarlyAccessLocked ? "checked" : ""} ${isEarlyAccessLocked ? "disabled" : ""}>
-                    <span class="check-box ${isEarlyAccessLocked ? "check-box-locked" : ""}"></span>
-                </span>
-            </label>
+            <div class="setting-row check-card check-card-right ${isPremiumLocked ? "setting-locked premium-locked-action" : ""}">
+                <div class="check-info">
+                    <strong style="display: flex; align-items: center; gap: 6px;">
+                        <label for="chk-${section}-${field.key}" style="cursor: pointer; user-select: none;">
+                            ${escapeHtml(field.label)} ${isPremiumLocked ? `<span class="premium-badge-inline">Premium</span>` : ""}
+                        </label>
+                        ${renderSyncButton(section, field.key)}
+                    </strong>
+                    <label for="chk-${section}-${field.key}" style="cursor: pointer; user-select: none; display: block;">
+                        <span>${escapeHtml(field.help)}</span>
+                    </label>
+                </div>
+                <label class="check-control" for="chk-${section}-${field.key}" style="cursor: pointer;">
+                    <input id="chk-${section}-${field.key}" type="checkbox" data-setting-section="${section}" data-setting-key="${field.key}" ${value && !isPremiumLocked ? "checked" : ""} ${isPremiumLocked ? "disabled" : ""}>
+                    <span class="check-box ${isPremiumLocked ? "check-box-locked" : ""}"></span>
+                </label>
+            </div>
         `;
     }
 
     if (field.type === "select") {
         return `
-            <div class="setting-row">
+            <div class="setting-row ${field.emphasis ? "setting-emphasis" : ""}">
                 <div class="setting-copy">
-                    <div class="setting-label">
+                    <div class="setting-label" style="display: flex; align-items: center; gap: 6px;">
                         <strong>${escapeHtml(field.label)}</strong>
                         <span class="tooltip-anchor" data-tooltip="${escapeHtml(field.help)}">?</span>
+                        ${renderSyncButton(section, field.key)}
                     </div>
                     <p class="help-text">${escapeHtml(field.help)}</p>
                 </div>
-                <div class="setting-input-wrap">
+                <div class="setting-input-wrap setting-width-${field.width || "standard"}">
                     <select data-setting-section="${section}" data-setting-key="${field.key}">
                         ${(field.options || []).map((option) => `
                             <option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>
@@ -1351,23 +1830,25 @@ function renderSettingField(section, field, value) {
         `;
     }
 
-    const isEarlyAccessLocked = !state.bootstrap?.auth?.early_access && field.key === "player_tag";
+    const isPremiumLocked = !state.bootstrap?.auth?.premium && field.key === "player_tag";
     const secretStatus = state.bootstrap?.settings?.[section]?._secret_status?.[field.key];
     const configuredSecretPlaceholder = field.secret && secretStatus?.configured
         ? `Configured (${secretStatus.masked || "hidden"}) - enter a replacement`
         : field.placeholder || "";
     return `
-        <div class="setting-row ${isEarlyAccessLocked ? "setting-locked ea-locked-action" : ""}">
+        <div class="setting-row ${field.emphasis ? "setting-emphasis" : ""} ${isPremiumLocked ? "setting-locked premium-locked-action" : ""}">
             <div class="setting-copy">
-                <div class="setting-label">
-                    <strong>${escapeHtml(field.label)} ${isEarlyAccessLocked ? `<span class="ea-badge-inline">Premium</span>` : ""}</strong>
+                <div class="setting-label" style="display: flex; align-items: center; gap: 6px;">
+                    <strong>${escapeHtml(field.label)} ${isPremiumLocked ? `<span class="premium-badge-inline">Premium</span>` : ""}</strong>
                     <span class="tooltip-anchor" data-tooltip="${escapeHtml(field.help)}">?</span>
+                    ${renderSyncButton(section, field.key)}
                 </div>
                 <p class="help-text">${escapeHtml(field.help)}</p>
             </div>
-            <div class="setting-input-wrap ${field.suffix ? "has-suffix" : ""}">
-                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isEarlyAccessLocked ? "Locked - Premium Only" : escapeHtml(configuredSecretPlaceholder)}" value="${isEarlyAccessLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isEarlyAccessLocked ? "readonly" : ""}>
+            <div class="setting-input-wrap setting-width-${field.width || "standard"} ${field.suffix ? "has-suffix" : ""} ${field.secret ? "has-secret-clear" : ""}">
+                <input data-setting-section="${section}" data-setting-key="${field.key}" type="${field.type}" step="${field.step || "1"}" placeholder="${isPremiumLocked ? "Locked - Premium Only" : escapeHtml(configuredSecretPlaceholder)}" value="${isPremiumLocked ? "" : escapeHtml(formatSettingValue(field, value))}" ${isPremiumLocked ? "readonly" : ""}>
                 ${field.suffix ? `<span class="input-suffix">${escapeHtml(field.suffix)}</span>` : ""}
+                ${field.secret ? `<button class="secret-clear-button" type="button" data-clear-secret-section="${section}" data-clear-secret-key="${field.key}" data-clear-secret-label="${escapeHtml(field.label)}" aria-label="Clear ${escapeHtml(field.label)}" title="Clear ${escapeHtml(field.label)}">${iconMarkup("trash")}</button>` : ""}
             </div>
         </div>
     `;
@@ -1387,7 +1868,10 @@ function renderTimerField(field, value) {
         <div class="timer-box">
             <div class="timer-header">
                 <div>
-                    <h5>${escapeHtml(field.label)}</h5>
+                    <h5 style="display: flex; align-items: center; gap: 6px;">
+                        ${escapeHtml(field.label)}
+                        ${renderSyncButton("timers", field.key)}
+                    </h5>
                     <span>${escapeHtml(field.help)}</span>
                 </div>
                 <input data-setting-section="timers" data-setting-key="${field.key}" data-timer-input="${field.key}" type="number" step="${field.step}" value="${value}">
@@ -1405,6 +1889,9 @@ function renderQueueDock() {
     const dock = document.getElementById("queueDock");
     if (!dock) return;
 
+    state.queueScrollbarCleanup?.();
+    state.queueScrollbarCleanup = null;
+
     const visible = ["dashboard", "queue"].includes(state.currentView);
     dock.classList.toggle("hidden", !visible);
     if (!visible) return;
@@ -1421,11 +1908,15 @@ function renderQueueDock() {
                 <p class="meta-line">${state.bootstrap.queue.length ? `${state.bootstrap.queue.length} brawler${state.bootstrap.queue.length === 1 ? "" : "s"} ready` : "No brawlers queued yet."}</p>
             </div>
             <div class="dock-actions">
+                <button id="queueDockLoadBtn" class="btn btn-sm" type="button">${iconMarkup("import")} Load Queue</button>
                 <button id="queueDockManageBtn" class="btn btn-sm" ${manageDisabled}>${manageLabel}</button>
             </div>
         </div>
         ${renderQueueStrip(state.bootstrap.queue)}
     `;
+    document.getElementById("queueDockLoadBtn")?.addEventListener("click", () => {
+        document.getElementById("queueFileInput")?.click();
+    });
     document.getElementById("queueDockManageBtn")?.addEventListener("click", () => {
         if (isQueueView) {
             clearQueue();
@@ -1442,8 +1933,14 @@ function renderQueueStrip(queue) {
     }
 
     return `
-        <div id="queueStrip" class="queue-strip">
-            ${queue.map((item, index) => `
+        <div class="queue-strip-shell">
+            <div id="queueStrip" class="queue-strip">
+                ${queue.map((item, index) => {
+                const liveStats = getLiveBrawlerStats(item.brawler);
+                const powerLevel = liveStats?.power_level;
+                const hasPower = typeof powerLevel === "number" && powerLevel > 0;
+
+                return `
                 <article class="queue-item" draggable="true" data-queue-brawler="${escapeHtml(item.brawler)}" data-tooltip="${escapeHtml(queueTooltip(item))}">
                     <span class="queue-index">${index + 1}</span>
                     <img class="qi-img" src="${escapeHtml(item.icon_url)}" alt="${escapeHtml(item.brawler)}">
@@ -1452,78 +1949,68 @@ function renderQueueStrip(queue) {
                         <span>${escapeHtml(item.current_label)}: ${item.current_value}</span>
                         <span>${escapeHtml(item.target_label)}: ${item.push_until}</span>
                     </div>
+                    ${hasPower ? `<span class="qi-power">Power ${powerLevel}</span>` : ""}
                     <button class="qi-del" data-delete-queue="${escapeHtml(item.brawler)}" aria-label="Delete ${escapeHtml(item.brawler)}">&times;</button>
                 </article>
-            `).join("")}
+                `;
+                }).join("")}
+            </div>
+            <div id="queueStripScrollbar" class="app-scrollbar app-scrollbar-horizontal queue-strip-scrollbar" role="scrollbar" aria-controls="queueStrip" aria-orientation="horizontal" aria-label="Scroll queued brawlers" tabindex="0">
+                <div id="queueStripScrollbarThumb" class="app-scrollbar-thumb"></div>
+            </div>
         </div>
     `;
 }
 
+
+
 function bindRuntimeButtons() {
-    document.getElementById("startRuntimeBtn")?.addEventListener("click", async () => {
-        const button = document.getElementById("startRuntimeBtn");
-        if (button.classList.contains("is-disabled")) return;
-
+    const startOrResume = async () => {
         const result = await fetchJSON("/api/runtime/start", { method: "POST" }, true);
         if (!result.ok) {
-            if (result.auth) {
-                state.bootstrap.auth = result.auth;
-                toggleAuthModal();
-            }
-            showToast(result.code ? formatAuthToast(result) : (result.message || "Unable to start Pyla."), "error");
+            showToast(result.message || "Unable to start Pyla.", "error");
             return;
         }
-
         state.bootstrap.runtime = result.runtime;
-        updateChrome();
         renderDashboard();
         renderQueueDock();
-        showToast("Pyla runtime started.", "success");
+        showToast(result.message || "Pyla runtime started.", "success");
+    };
+
+    document.getElementById("startRuntimeBtn")?.addEventListener("click", async (event) => {
+        if (event.currentTarget.classList.contains("is-disabled")) return;
+        await startOrResume();
     });
-
-    document.getElementById("resumeRuntimeBtn")?.addEventListener("click", async () => {
-        const result = await fetchJSON("/api/runtime/start", { method: "POST" }, true);
-        if (!result.ok) {
-            if (result.auth) {
-                state.bootstrap.auth = result.auth;
-                toggleAuthModal();
-            }
-            showToast(result.code ? formatAuthToast(result) : (result.message || "Unable to resume Pyla."), "error");
-            return;
-        }
-
-        state.bootstrap.runtime = result.runtime;
-        updateChrome();
+    document.getElementById("resumeRuntimeBtn")?.addEventListener("click", startOrResume);
+    document.getElementById("pauseRuntimeBtn")?.addEventListener("click", async (event) => {
+        if (event.currentTarget.classList.contains("is-disabled")) return;
+        const previousRuntime = state.bootstrap.runtime;
+        state.bootstrap.runtime = { ...previousRuntime, state: "pausing" };
         renderDashboard();
-        renderQueueDock();
-        showToast("Pyla runtime resumed.", "success");
-    });
-
-    document.getElementById("pauseRuntimeBtn")?.addEventListener("click", async () => {
-        const button = document.getElementById("pauseRuntimeBtn");
-        if (button?.classList.contains("is-disabled")) return;
         const result = await fetchJSON("/api/runtime/pause", { method: "POST" }, true);
         if (!result.ok) {
+            state.bootstrap.runtime = previousRuntime;
+            renderDashboard();
             showToast(result.message || "Unable to pause Pyla.", "error");
             return;
         }
-
         state.bootstrap.runtime = result.runtime;
-        updateChrome();
         renderDashboard();
         renderQueueDock();
         showToast(result.message || "Pause requested.", "success");
     });
-
     document.getElementById("stopRuntimeBtn")?.addEventListener("click", async () => {
+        const previousRuntime = state.bootstrap.runtime;
+        state.bootstrap.runtime = { ...previousRuntime, state: "stopping" };
+        renderDashboard();
         const result = await fetchJSON("/api/runtime/stop", { method: "POST" }, true);
         if (!result.ok) {
+            state.bootstrap.runtime = previousRuntime;
+            renderDashboard();
             showToast(result.message || "Unable to stop Pyla.", "error");
             return;
         }
-
         state.bootstrap.runtime = result.runtime;
-        updateChrome();
         renderDashboard();
         renderQueueDock();
         showToast(result.message || "Stop requested.", "success");
@@ -1535,63 +2022,83 @@ function startRuntimePolling() {
     state.runtimePollTimer = setInterval(refreshRuntimeState, 1200);
 }
 
+function startHistoryPolling() {
+    if (state.historyPollTimer) return;
+    state.historyPollTimer = setInterval(refreshVisibleHistory, 1000);
+}
+
+function refreshVisibleHistory() {
+    if (document.visibilityState !== "hidden" && state.currentView === "history") {
+        refreshMatchHistory();
+    }
+}
+
+
 async function refreshRuntimeState() {
     if (!state.bootstrap) return;
-
     try {
         const result = await fetchJSON("/api/runtime/status", {}, true);
         if (!result.ok || !result.runtime) return;
-
-        const prevState = state.bootstrap.runtime?.state;
+        const previousState = state.bootstrap.runtime?.state;
         state.bootstrap.runtime = result.runtime;
-
-        if (result.runtime.is_running) {
-            await refreshRunningQueue();
-            await refreshMatchHistory();
+        updateSessionTimer();
+        // The visible History view has its own poller so it remains live even if
+        // runtime status polling fails or the selected profile is idle.
+        if (result.runtime.is_running && state.currentView !== "history") await refreshMatchHistory();
+        if (result.runtime.is_running) await refreshRunningQueue();
+        if (previousState !== result.runtime.state) {
+            renderDashboard();
+            renderQueueDock();
+            if (result.runtime.state === "error") showToast(result.runtime.last_error || "Pyla stopped with an error.", "error");
+            if (previousState === "running" && !result.runtime.is_running) await refreshMatchHistory();
         }
-
-        if (prevState !== result.runtime.state) {
-            updateChrome();
-            if (state.currentView === "dashboard") {
-                renderDashboard();
-                renderQueueDock();
-            }
-            if (result.runtime.state === "error") {
-                showToast(result.runtime.last_error || "Pyla stopped with an error.", "error");
-            }
-
-            if (prevState === "running" && !result.runtime.is_running) {
-                await refreshMatchHistory();
-            }
-        }
+        if (state.currentView === "logs") await refreshLogs();
     } catch {
         return;
     }
 }
 
 async function refreshMatchHistory() {
-    try {
-        const result = await fetchJSON("/api/history", {}, true);
-        if (!result || !result.items) return;
+    if (!state.bootstrap) return;
+    if (state.historyRefreshInFlight) return state.historyRefreshInFlight;
 
-        const prevItems = state.bootstrap.history?.items || [];
-        if (JSON.stringify(result.items) === JSON.stringify(prevItems)) return;
+    state.historyRefreshInFlight = (async () => {
+        try {
+            const query = new URLSearchParams();
+            if (state.historyStartDate) query.set("start_date", state.historyStartDate);
+            if (state.historyEndDate) query.set("end_date", state.historyEndDate);
+            const queryString = query.toString();
+            const historyUrl = `/api/history${queryString ? `?${queryString}` : ""}`;
+            const result = await fetchJSON(historyUrl, { cache: "no-store" }, true);
+            if (!result || !result.items) return;
 
-        state.bootstrap.history = result;
+            const previousHistory = state.bootstrap.history || {};
+            if (JSON.stringify(result) === JSON.stringify(previousHistory)) return;
 
-        if (state.currentView === "history") {
-            const summary = getHistorySummary();
-            const totalEl = document.querySelector("#view-history .history-total");
-            const metaEl = document.querySelector("#view-history .history-summary-meta");
-            if (totalEl) totalEl.textContent = `${summary.total_matches} total matches`;
-            if (metaEl) metaEl.textContent = `${summary.wins} wins | ${summary.losses} losses | ${formatPercent(summary.win_rate)} win rate | ${formatPercent(summary.loss_rate)} loss rate`;
+            state.bootstrap.history = result;
 
-            const grid = document.querySelector("#view-history .hist-grid");
-            if (grid) grid.innerHTML = renderHistoryGrid();
+            if (state.currentView === "dashboard") {
+                renderDashboard();
+            }
+
+            if (state.currentView === "history") {
+                updateHistorySummary();
+
+                const grid = document.querySelector("#view-history .hist-grid");
+                if (grid) grid.innerHTML = renderHistoryGrid();
+            }
+
+            if (state.activeHistoryBrawler) {
+                updateHistoryDetails(state.activeHistoryBrawler);
+            }
+        } catch {
+            return;
         }
-    } catch {
-        return;
-    }
+    })().finally(() => {
+        state.historyRefreshInFlight = null;
+    });
+
+    return state.historyRefreshInFlight;
 }
 
 async function refreshRunningQueue() {
@@ -1610,184 +2117,6 @@ async function refreshRunningQueue() {
         renderQueue();
     }
     renderQueueDock();
-}
-
-function bindQueueEvents() {
-    document.getElementById("brawlerSearch")?.addEventListener("input", (event) => {
-        state.brawlerSearch = event.target.value;
-        document.getElementById("brawlerGrid").innerHTML = renderBrawlerCards();
-        bindBrawlerCardEvents();
-    });
-
-    document.getElementById("playerTagInput")?.addEventListener("input", (event) => {
-        event.target.value = ensurePlayerTagPrefix(event.target.value);
-    });
-
-    document.getElementById("playerTagInput")?.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            event.target.blur();
-        }
-    });
-
-    document.getElementById("playerTagInput")?.addEventListener("blur", async (event) => {
-        event.target.value = formatPlayerTagInput(event.target.value);
-        await commitPlayerTagUpdate(event.target.value.trim());
-    });
-
-    document.getElementById("loadQueueBtn")?.addEventListener("click", () => {
-        document.getElementById("queueFileInput")?.click();
-    });
-
-    document.getElementById("queueFileInput")?.addEventListener("change", handleQueueImport);
-
-    document.getElementById("pushAllQueueBtn")?.addEventListener("click", pushAllToDefaultTarget);
-
-    document.getElementById("playOrderSelect")?.addEventListener("change", async (event) => {
-        await savePlayOrder(event.target.value);
-    });
-
-    bindBrawlerCardEvents();
-
-    document.querySelectorAll("[data-target-type]").forEach((button) => {
-        button.addEventListener("click", () => {
-            state.queueTargetType = button.dataset.targetType;
-            renderQueue();
-        });
-    });
-
-    document.getElementById("saveQueueItemBtn")?.addEventListener("click", saveQueueItem);
-}
-
-function bindBrawlerCardEvents() {
-    document.querySelectorAll("[data-brawler]").forEach((button) => {
-        button.addEventListener("click", () => {
-            state.selectedBrawler = button.dataset.brawler;
-            syncQueueFormState();
-            renderQueue();
-        });
-    });
-}
-
-function bindQueueStripEvents() {
-    document.querySelectorAll("[data-delete-queue]").forEach((button) => {
-        button.addEventListener("click", async (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-
-            const brawler = button.dataset.deleteQueue;
-            try {
-                const result = await fetchJSON(`/api/queue/${encodeURIComponent(brawler)}`, { method: "DELETE" });
-                state.bootstrap.queue = result.items;
-
-                if (state.selectedBrawler === brawler) {
-                    syncQueueFormState();
-                }
-
-                renderDashboard();
-                renderQueue();
-                renderQueueDock();
-                showToast(`${brawler} removed from queue.`, "success");
-            } catch (error) {
-                showToast(error.message || `Unable to remove ${brawler} from queue.`, "error");
-            }
-        });
-    });
-
-    const strip = document.getElementById("queueStrip");
-    if (!strip) return;
-
-    let originalOrder = [];
-    let suppressQueueItemClick = false;
-
-    strip.querySelectorAll("[data-queue-brawler]").forEach((item) => {
-        item.addEventListener("click", (event) => {
-            if (event.target.closest("[data-delete-queue]")) return;
-            if (suppressQueueItemClick) {
-                suppressQueueItemClick = false;
-                return;
-            }
-            selectBrawlerFromQueue(item.dataset.queueBrawler);
-        });
-
-        item.addEventListener("dragstart", () => {
-            originalOrder = [...strip.querySelectorAll("[data-queue-brawler]")].map((node) => node.dataset.queueBrawler);
-            suppressQueueItemClick = true;
-            item.classList.add("dragging");
-        });
-
-        item.addEventListener("dragend", async () => {
-            item.classList.remove("dragging");
-            const order = [...strip.querySelectorAll("[data-queue-brawler]")].map((node) => node.dataset.queueBrawler);
-            if (JSON.stringify(order) === JSON.stringify(originalOrder)) return;
-            await persistQueueOrder(order);
-        });
-    });
-
-    strip.addEventListener("dragover", (event) => {
-        event.preventDefault();
-        const dragged = strip.querySelector(".dragging");
-        if (!dragged) return;
-
-        const afterElement = getDragAfterElement(strip, event.clientX);
-        if (!afterElement) {
-            strip.appendChild(dragged);
-        } else {
-            strip.insertBefore(dragged, afterElement);
-        }
-    });
-}
-
-function getDragAfterElement(container, x) {
-    const elements = [...container.querySelectorAll("[data-queue-brawler]:not(.dragging)")];
-
-    return elements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = x - box.left - box.width / 2;
-
-        if (offset < 0 && offset > closest.offset) {
-            return { offset, element: child };
-        }
-
-        return closest;
-    }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
-}
-
-async function clearQueue() {
-    if (!state.bootstrap.queue.length) return;
-
-    try {
-        const result = await fetchJSON("/api/queue", { method: "DELETE" });
-        state.bootstrap.queue = result.items || [];
-        syncQueueFormState();
-        renderDashboard();
-        renderQueue();
-        renderQueueDock();
-        showToast("Queue cleared.", "success");
-    } catch (error) {
-        showToast(error.message || "Unable to clear queue.", "error");
-    }
-}
-
-async function persistQueueOrder(order) {
-    try {
-        const result = await fetchJSON("/api/queue/reorder", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ order }),
-        });
-
-        state.bootstrap.queue = result.items;
-        renderDashboard();
-        renderQueue();
-        renderQueueDock();
-        showToast("Queue reordered.", "success");
-    } catch (error) {
-        showToast(error.message || "Unable to reorder queue.", "error");
-        renderDashboard();
-        renderQueue();
-        renderQueueDock();
-    }
 }
 
 function bindCustomScrollbar(scrollElementId, trackId, thumbId) {
@@ -1930,6 +2259,140 @@ function bindCustomScrollbar(scrollElementId, trackId, thumbId) {
     return cleanup;
 }
 
+function bindHorizontalScrollbar(scrollElementId, trackId, thumbId) {
+    const scroller = document.getElementById(scrollElementId);
+    const track = document.getElementById(trackId);
+    const thumb = document.getElementById(thumbId);
+    if (!scroller || !track || !thumb) return null;
+
+    let animationFrame = null;
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartScrollLeft = 0;
+
+    const updateScrollbar = () => {
+        animationFrame = null;
+        const scrollRange = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+        const trackWidth = track.clientWidth;
+        const hasOverflow = scrollRange > 1 && trackWidth > 0;
+
+        track.classList.toggle("is-hidden", !hasOverflow);
+        track.setAttribute("aria-valuemin", "0");
+        track.setAttribute("aria-valuemax", String(Math.round(scrollRange)));
+        track.setAttribute("aria-valuenow", String(Math.round(scroller.scrollLeft)));
+        if (!hasOverflow) return;
+
+        const thumbWidth = Math.min(trackWidth, Math.max(48, Math.round(trackWidth * scroller.clientWidth / scroller.scrollWidth)));
+        const thumbTravel = Math.max(0, trackWidth - thumbWidth);
+        const thumbLeft = scrollRange ? (scroller.scrollLeft / scrollRange) * thumbTravel : 0;
+        thumb.style.width = `${thumbWidth}px`;
+        thumb.style.transform = `translate3d(${thumbLeft}px, 0, 0)`;
+    };
+
+    const scheduleUpdate = () => {
+        if (animationFrame !== null) return;
+        animationFrame = requestAnimationFrame(updateScrollbar);
+    };
+
+    const finishDrag = (event) => {
+        if (!dragging) return;
+        dragging = false;
+        thumb.classList.remove("is-dragging");
+        if (thumb.hasPointerCapture(event.pointerId)) thumb.releasePointerCapture(event.pointerId);
+    };
+
+    const handleThumbPointerDown = (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        dragging = true;
+        dragStartX = event.clientX;
+        dragStartScrollLeft = scroller.scrollLeft;
+        thumb.classList.add("is-dragging");
+        thumb.setPointerCapture(event.pointerId);
+    };
+
+    const handleThumbPointerMove = (event) => {
+        if (!dragging) return;
+        event.preventDefault();
+        const scrollRange = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+        const thumbTravel = Math.max(0, track.clientWidth - thumb.offsetWidth);
+        if (scrollRange && thumbTravel) {
+            scroller.scrollLeft = dragStartScrollLeft + (event.clientX - dragStartX) * scrollRange / thumbTravel;
+        }
+    };
+
+    const handleTrackPointerDown = (event) => {
+        if (event.target === thumb || event.button !== 0) return;
+        event.preventDefault();
+        const scrollRange = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+        const trackRect = track.getBoundingClientRect();
+        const thumbTravel = Math.max(0, track.clientWidth - thumb.offsetWidth);
+        const requestedLeft = Math.min(thumbTravel, Math.max(0, event.clientX - trackRect.left - thumb.offsetWidth / 2));
+        scroller.scrollLeft = thumbTravel ? requestedLeft / thumbTravel * scrollRange : 0;
+    };
+
+    const handleTrackWheel = (event) => {
+        event.preventDefault();
+        scroller.scrollLeft += event.deltaX || event.deltaY;
+    };
+
+    const handleTrackKeydown = (event) => {
+        const pageDistance = Math.max(120, scroller.clientWidth * 0.85);
+        const keyActions = {
+            ArrowLeft: () => { scroller.scrollLeft -= 64; },
+            ArrowRight: () => { scroller.scrollLeft += 64; },
+            PageUp: () => { scroller.scrollLeft -= pageDistance; },
+            PageDown: () => { scroller.scrollLeft += pageDistance; },
+            Home: () => { scroller.scrollLeft = 0; },
+            End: () => { scroller.scrollLeft = scroller.scrollWidth; },
+        };
+        const action = keyActions[event.key];
+        if (!action) return;
+        event.preventDefault();
+        action();
+    };
+
+    scroller.addEventListener("scroll", scheduleUpdate, { passive: true });
+    track.addEventListener("pointerdown", handleTrackPointerDown);
+    track.addEventListener("wheel", handleTrackWheel, { passive: false });
+    track.addEventListener("keydown", handleTrackKeydown);
+    thumb.addEventListener("pointerdown", handleThumbPointerDown);
+    thumb.addEventListener("pointermove", handleThumbPointerMove);
+    thumb.addEventListener("pointerup", finishDrag);
+    thumb.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("resize", scheduleUpdate);
+
+    const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleUpdate) : null;
+    resizeObserver?.observe(scroller);
+    resizeObserver?.observe(track);
+
+    const cleanup = () => {
+        if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+        resizeObserver?.disconnect();
+        scroller.removeEventListener("scroll", scheduleUpdate);
+        track.removeEventListener("pointerdown", handleTrackPointerDown);
+        track.removeEventListener("wheel", handleTrackWheel);
+        track.removeEventListener("keydown", handleTrackKeydown);
+        thumb.removeEventListener("pointerdown", handleThumbPointerDown);
+        thumb.removeEventListener("pointermove", handleThumbPointerMove);
+        thumb.removeEventListener("pointerup", finishDrag);
+        thumb.removeEventListener("pointercancel", finishDrag);
+        window.removeEventListener("resize", scheduleUpdate);
+    };
+
+    scheduleUpdate();
+    return cleanup;
+}
+
+function bindBrawlerScrollbar() {
+    state.brawlerScrollbarCleanup?.();
+    state.brawlerScrollbarCleanup = bindCustomScrollbar(
+        "brawlerGrid",
+        "brawlerGridScrollbar",
+        "brawlerGridScrollbarThumb",
+    );
+}
+
 function bindPlaystyleScrollbar() {
     state.playstyleScrollbarCleanup?.();
     state.playstyleScrollbarCleanup = bindCustomScrollbar(
@@ -1937,6 +2400,230 @@ function bindPlaystyleScrollbar() {
         "playstyleLibraryScrollbar",
         "playstyleLibraryScrollbarThumb",
     );
+}
+
+
+
+function bindMainViewScrollbar() {
+    state.mainViewScrollbarCleanup?.();
+    state.mainViewScrollbarCleanup = bindCustomScrollbar(
+        "viewsWrapper",
+        "mainViewScrollbar",
+        "mainViewScrollbarThumb",
+    );
+}
+
+function bindQueueEvents() {
+    bindBrawlerScrollbar();
+
+    document.getElementById("brawlerSearch")?.addEventListener("input", (event) => {
+        state.brawlerSearch = event.target.value;
+        document.getElementById("brawlerGrid").innerHTML = renderBrawlerCards();
+        bindBrawlerCardEvents();
+    });
+
+    document.getElementById("playerTagInput")?.addEventListener("input", (event) => {
+        event.target.value = ensurePlayerTagPrefix(event.target.value);
+    });
+
+    document.getElementById("playerTagInput")?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            event.target.blur();
+        }
+    });
+
+    document.getElementById("playerTagInput")?.addEventListener("blur", async (event) => {
+        event.target.value = formatPlayerTagInput(event.target.value);
+        await commitPlayerTagUpdate(event.target.value.trim());
+    });
+
+    document.getElementById("brawlerSortSelect")?.addEventListener("change", handleBrawlerSortChange);
+    document.getElementById("brawlerSortDirectionBtn")?.addEventListener("click", () => {
+        state.brawlerSortDirection = state.brawlerSortDirection === "asc" ? "desc" : "asc";
+        setStorageItem("brawlerSortDirection", state.brawlerSortDirection);
+        renderQueue();
+    });
+
+    document.getElementById("queueFileInput")?.addEventListener("change", handleQueueImport);
+
+    document.getElementById("pushAllQueueBtn")?.addEventListener("click", pushAllToDefaultTarget);
+
+    document.getElementById("playOrderSelect")?.addEventListener("change", async (event) => {
+        await savePlayOrder(event.target.value);
+    });
+
+    bindBrawlerCardEvents();
+
+    document.querySelectorAll("[data-target-type]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.queueTargetType = button.dataset.targetType;
+            renderQueue();
+        });
+    });
+
+    document.getElementById("saveQueueItemBtn")?.addEventListener("click", saveQueueItem);
+}
+
+function bindBrawlerCardEvents() {
+    document.querySelectorAll("[data-brawler]").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.selectedBrawler = button.dataset.brawler;
+            syncQueueFormState();
+            renderQueue();
+        });
+    });
+}
+
+function handleBrawlerSortChange(event) {
+    const requestedSort = event.target.value;
+    const requiresPlayerData = ["trophies", "win_streak", "power_level"].includes(requestedSort);
+    if (requiresPlayerData && !state.bootstrap?.auth?.premium) {
+        event.target.value = state.brawlerSort;
+        showPremiumModal();
+        return;
+    }
+    const hasValidPlayerInfo = hasLivePlayerStats();
+    if (requiresPlayerData && !hasValidPlayerInfo) {
+        event.target.value = state.brawlerSort;
+        showToast("Enter and validate a player tag before sorting by live brawler stats.", "error");
+        return;
+    }
+    state.brawlerSort = requestedSort;
+    setStorageItem("brawlerSort", requestedSort);
+    renderQueue();
+}
+
+function trophyIconMarkup() {
+    return `<img class="trophy-icon" src="/api/assets/support/trophies_icon.png" alt="Trophies">`;
+}
+
+function bindQueueStripEvents() {
+    document.querySelectorAll("[data-delete-queue]").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const brawler = button.dataset.deleteQueue;
+            try {
+                const result = await fetchJSON(`/api/queue/${encodeURIComponent(brawler)}`, { method: "DELETE" });
+                state.bootstrap.queue = result.items;
+
+                if (state.selectedBrawler === brawler) {
+                    syncQueueFormState();
+                }
+
+                renderDashboard();
+                renderQueue();
+                renderQueueDock();
+                showToast(`${brawler} removed from queue.`, "success");
+            } catch (error) {
+                showToast(error.message || `Unable to remove ${brawler} from queue.`, "error");
+            }
+        });
+    });
+
+    const strip = document.getElementById("queueStrip");
+    if (!strip) return;
+
+    state.queueScrollbarCleanup?.();
+    state.queueScrollbarCleanup = bindHorizontalScrollbar(
+        "queueStrip",
+        "queueStripScrollbar",
+        "queueStripScrollbarThumb",
+    );
+
+    let originalOrder = [];
+    let suppressQueueItemClick = false;
+
+    strip.querySelectorAll("[data-queue-brawler]").forEach((item) => {
+        item.addEventListener("click", (event) => {
+            if (event.target.closest("[data-delete-queue]")) return;
+            if (suppressQueueItemClick) {
+                suppressQueueItemClick = false;
+                return;
+            }
+            selectBrawlerFromQueue(item.dataset.queueBrawler);
+        });
+
+        item.addEventListener("dragstart", () => {
+            originalOrder = [...strip.querySelectorAll("[data-queue-brawler]")].map((node) => node.dataset.queueBrawler);
+            suppressQueueItemClick = true;
+            item.classList.add("dragging");
+        });
+
+        item.addEventListener("dragend", async () => {
+            item.classList.remove("dragging");
+            const order = [...strip.querySelectorAll("[data-queue-brawler]")].map((node) => node.dataset.queueBrawler);
+            if (JSON.stringify(order) === JSON.stringify(originalOrder)) return;
+            await persistQueueOrder(order);
+        });
+    });
+
+    strip.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        const dragged = strip.querySelector(".dragging");
+        if (!dragged) return;
+
+        const afterElement = getDragAfterElement(strip, event.clientX);
+        if (!afterElement) {
+            strip.appendChild(dragged);
+        } else {
+            strip.insertBefore(dragged, afterElement);
+        }
+    });
+}
+
+function getDragAfterElement(container, x) {
+    const elements = [...container.querySelectorAll("[data-queue-brawler]:not(.dragging)")];
+
+    return elements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = x - box.left - box.width / 2;
+
+        if (offset < 0 && offset > closest.offset) {
+            return { offset, element: child };
+        }
+
+        return closest;
+    }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+async function clearQueue() {
+    if (!state.bootstrap.queue.length) return;
+
+    try {
+        const result = await fetchJSON("/api/queue", { method: "DELETE" });
+        state.bootstrap.queue = result.items || [];
+        syncQueueFormState();
+        renderDashboard();
+        renderQueue();
+        renderQueueDock();
+        showToast("Queue cleared.", "success");
+    } catch (error) {
+        showToast(error.message || "Unable to clear queue.", "error");
+    }
+}
+
+async function persistQueueOrder(order) {
+    try {
+        const result = await fetchJSON("/api/queue/reorder", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ order }),
+        });
+
+        state.bootstrap.queue = result.items;
+        renderDashboard();
+        renderQueue();
+        renderQueueDock();
+        showToast("Queue reordered.", "success");
+    } catch (error) {
+        showToast(error.message || "Unable to reorder queue.", "error");
+        renderDashboard();
+        renderQueue();
+        renderQueueDock();
+    }
 }
 
 function bindPlaystyleEvents() {
@@ -1963,33 +2650,16 @@ function bindPlaystyleEvents() {
     bindPlaystyleCardEvents();
 }
 
+
 function bindPlaystyleCardEvents() {
     document.querySelectorAll("[data-toggle-playstyle-description]").forEach((button) => {
         button.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
-
             const filename = button.dataset.togglePlaystyleDescription;
-            const isSelectedCard = Boolean(button.closest(".playstyle-showcase.selected"));
-            if (state.expandedPlaystyleDescriptions.has(filename)) {
-                state.expandedPlaystyleDescriptions.delete(filename);
-            } else {
-                state.expandedPlaystyleDescriptions.add(filename);
-            }
-
-            const library = document.getElementById("playstyleLibrary");
-            const previousScrollTop = library?.scrollTop || 0;
-            if (isSelectedCard) {
-                renderPlaystyles();
-                const refreshedLibrary = document.getElementById("playstyleLibrary");
-                if (refreshedLibrary) refreshedLibrary.scrollTop = previousScrollTop;
-                return;
-            }
-
-            if (!library) return;
-            library.innerHTML = renderPlaystyleLibrary();
-            library.scrollTop = previousScrollTop;
-            bindPlaystyleCardEvents();
+            if (state.expandedPlaystyleDescriptions.has(filename)) state.expandedPlaystyleDescriptions.delete(filename);
+            else state.expandedPlaystyleDescriptions.add(filename);
+            renderPlaystyles();
         });
     });
 
@@ -1997,12 +2667,10 @@ function bindPlaystyleCardEvents() {
         button.addEventListener("click", async (event) => {
             event.preventDefault();
             event.stopPropagation();
-
             const filename = button.dataset.deletePlaystyle;
             const playstyle = state.bootstrap.playstyles.items?.find((item) => item.filename === filename);
             const label = playstyle?.name || filename;
             if (!window.confirm(`Delete "${label}"? This removes the playstyle file.`)) return;
-
             const result = await fetchJSON(`/api/playstyles/${encodeURIComponent(filename)}`, { method: "DELETE" });
             state.bootstrap.playstyles = result.playstyles;
             renderDashboard();
@@ -2013,23 +2681,48 @@ function bindPlaystyleCardEvents() {
 
     document.querySelectorAll("[data-activate-playstyle]").forEach((button) => {
         button.addEventListener("click", async () => {
-            const filename = button.dataset.activatePlaystyle;
-            const result = await fetchJSON("/api/playstyles/active", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ filename }),
-            });
-
-            state.bootstrap.playstyles = result.playstyles;
-            state.bootstrap.settings.bot.current_playstyle = filename;
-            renderDashboard();
-            renderPlaystyles();
-            showToast("Playstyle activated.", "success");
+            try {
+                const filename = button.dataset.activatePlaystyle;
+                const result = await fetchJSON("/api/playstyles/active", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filename }),
+                });
+                state.bootstrap.playstyles = result.playstyles;
+                state.bootstrap.settings.bot.current_playstyle = filename;
+                renderDashboard();
+                renderPlaystyles();
+                showToast("Playstyle activated.", "success");
+            } catch (error) {
+                showToast(error.message || "Unable to activate playstyle.", "error");
+            }
         });
     });
 }
 
+
+
+
+
 function bindSettingsEvents() {
+    const settingsSearch = document.getElementById("settingsSearch");
+    if (settingsSearch) {
+        settingsSearch.addEventListener("input", () => {
+            state.settingsSearch = settingsSearch.value;
+            applySettingsSearch(settingsSearch.value);
+        });
+    }
+
+    document.querySelectorAll("[data-client-setting]").forEach((input) => {
+        input.addEventListener("input", () => {
+            if (input.dataset.clientSetting === "showAllBrawlers") {
+                state.showAllBrawlers = input.checked;
+                setStorageItem("showAllBrawlers", String(input.checked));
+                renderQueue();
+            }
+        });
+    });
+
     document.querySelectorAll("[data-setting-section]").forEach((input) => {
         const eventName = input.type === "checkbox" || input.type === "range" ? "input" : "change";
         if (input.dataset.settingKey === "player_tag") {
@@ -2042,6 +2735,32 @@ function bindSettingsEvents() {
             });
         }
         input.addEventListener(eventName, () => scheduleAutosave(input));
+    });
+
+    document.querySelectorAll("[data-clear-secret-key]").forEach((button) => {
+        button.addEventListener("click", () => clearSecretSetting(button));
+    });
+
+    // Make the entire setting checkbox card row clickable to toggle the checkbox
+    document.querySelectorAll(".setting-row.check-card").forEach((card) => {
+        card.addEventListener("click", (event) => {
+            // If clicking the input directly, a button, a tooltip, or a label, let the native browser behavior handle it.
+            // Clicking labels natively dispatches a click event to the target checkbox, so we must not double-toggle here.
+            if (
+                event.target.closest("input") || 
+                event.target.closest("button") || 
+                event.target.closest(".tooltip-anchor") ||
+                event.target.closest("label")
+            ) {
+                return;
+            }
+            const input = card.querySelector("input[type='checkbox']");
+            if (input && !input.disabled) {
+                input.checked = !input.checked;
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        });
     });
 
     document.querySelectorAll("[data-timer-key]").forEach((slider) => {
@@ -2079,7 +2798,17 @@ function bindSettingsEvents() {
             resetSectionSettings(section);
         });
     });
+
+    document.querySelectorAll(".btn-sync-toggle").forEach((button) => {
+        button.addEventListener("click", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await toggleSettingSync(button);
+        });
+    });
 }
+
+
 
 function setSliderVisual(slider) {
     const min = Number(slider.min || 0);
@@ -2090,32 +2819,11 @@ function setSliderVisual(slider) {
 }
 
 async function commitPlayerTagUpdate(tag) {
-    clearTimeout(state.playerTagTimer);
-    const cleanNew = cleanPlayerTag(tag);
-    const cleanSaved = cleanPlayerTag(state.bootstrap.settings.general.player_tag || "");
-    const tagChanged = cleanNew !== cleanSaved;
-    const previousLookupFailed = state.playerInfo.ok === false;
-
-    if (!tagChanged && !previousLookupFailed) return;
-
-    await updatePlayerTag(formatPlayerTagInput(tag));
+    showPremiumModal();
 }
 
 async function updatePlayerTag(tag) {
-    setPlayerTagLoading(true);
-    try {
-        const saved = await fetchJSON("/api/settings/general", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ player_tag: tag }),
-        });
-
-        state.bootstrap.settings.general = { ...state.bootstrap.settings.general, ...saved };
-        await refreshPlayerInfo(tag, true);
-        renderSettings();
-    } finally {
-        setPlayerTagLoading(false);
-    }
+    showPremiumModal();
 }
 
 function setPlayerTagLoading(isLoading) {
@@ -2137,27 +2845,16 @@ function setPlayerTagLoading(isLoading) {
 }
 
 async function refreshPlayerInfo(tag, notify) {
-    const cleanTag = cleanPlayerTag(tag);
-    if (!cleanTag) {
-        state.playerInfo = { ok: true, player_tag: "", player_name: "", stats: {} };
-        renderQueue();
-        return;
-    }
-
-    const result = await fetchJSON(`/api/player-info?tag=${encodeURIComponent(formatPlayerTagInput(cleanTag))}`, {}, true);
-    if (!result.ok) {
-        state.playerInfo = { ok: false, player_tag: cleanTag, player_name: "", stats: {}, message: result.message || INVALID_PLAYER_TAG_MESSAGE };
-        renderQueue();
-        if (notify) {
-            showToast(result.message || INVALID_PLAYER_TAG_MESSAGE, "error");
-        }
-        return;
-    }
-
-    state.playerInfo = result;
+    state.playerInfo = {
+        ok: false,
+        player_tag: "",
+        player_name: "",
+        stats: {},
+        message: "Live player profiles are available in Premium.",
+    };
     renderQueue();
     if (notify) {
-        showToast(`Player data synced for ${result.player_name || result.player_tag}.`, "success");
+        showPremiumModal();
     }
 }
 
@@ -2193,18 +2890,7 @@ async function saveQueueItem() {
 }
 
 async function pushAllToDefaultTarget() {
-    const result = await fetchJSON("/api/queue/push-all-to-target", { method: "POST" }, true);
-    if (!result.ok) {
-        showToast(result.message || "Unable to push brawlers to target.", "error");
-        return;
-    }
-
-    state.bootstrap.queue = result.items || [];
-    syncQueueFormState();
-    renderDashboard();
-    renderQueue();
-    renderQueueDock();
-    showToast(`${result.added_count || 0} brawler${result.added_count === 1 ? "" : "s"} below target queued.`, "success");
+    showPremiumModal();
 }
 
 async function savePlayOrder(playOrder) {
@@ -2215,17 +2901,15 @@ async function savePlayOrder(playOrder) {
     });
 
     state.bootstrap.settings.general = { ...state.bootstrap.settings.general, ...saved };
-    if (playOrder !== "in_order") {
-        const queueResult = await fetchJSON("/api/queue", {}, true);
-        if (queueResult.items) {
-            state.bootstrap.queue = queueResult.items;
-            syncQueueFormState();
-            renderDashboard();
-            if (state.currentView === "queue") {
-                renderQueue();
-            }
-            renderQueueDock();
+    const queueResult = await fetchJSON("/api/queue", {}, true);
+    if (queueResult.items) {
+        state.bootstrap.queue = queueResult.items;
+        syncQueueFormState();
+        renderDashboard();
+        if (state.currentView === "queue") {
+            renderQueue();
         }
+        renderQueueDock();
     }
     renderSettings();
 }
@@ -2242,6 +2926,9 @@ function scheduleAutosave(input) {
 
 async function autosaveSection(section) {
     const payload = collectSectionPayload(section);
+    const previousMaxResolution = section === "general"
+        ? state.bootstrap.settings.general.max_resolution
+        : null;
     const result = await fetchJSON(`/api/settings/${section}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -2256,10 +2943,40 @@ async function autosaveSection(section) {
     state.bootstrap.settings[section] = result;
 
     if (section === "general") {
+        const switchedTo1280 = ["auto", "1920x1080"].includes(previousMaxResolution)
+            && result.max_resolution === "1280x720";
+        const switchedFrom1280 = previousMaxResolution === "1280x720"
+            && ["auto", "1920x1080"].includes(result.max_resolution);
+        if (switchedTo1280 || switchedFrom1280) {
+            const botSettings = await fetchJSON("/api/settings/bot", {}, true);
+            if (botSettings && botSettings.ok !== false) {
+                state.bootstrap.settings.bot = botSettings;
+            }
+        }
         await refreshPlayerInfo(result.player_tag || "", false);
     }
 
     renderSettings();
+}
+
+async function clearSecretSetting(button) {
+    const section = button.dataset.clearSecretSection;
+    const key = button.dataset.clearSecretKey;
+    const label = button.dataset.clearSecretLabel || "this sensitive value";
+    if (!section || !key || !window.confirm(`Clear ${label}? This cannot be undone.`)) return;
+
+    const result = await fetchJSON(`/api/settings/${section}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: "", _clear_secrets: [key] }),
+    }, true);
+    if (!result || result.ok === false) {
+        showToast(result?.message || `Failed to clear ${label}.`, "error");
+        return;
+    }
+    state.bootstrap.settings[section] = result;
+    renderSettings();
+    showToast(`${label} cleared.`, "success");
 }
 
 async function resetSectionSettings(section) {
@@ -2287,6 +3004,7 @@ function collectSectionPayload(section) {
     document.querySelectorAll(`[data-setting-section="${section}"]`).forEach((input) => {
         const key = input.dataset.settingKey;
         if (!key) return;
+        if (input.type === "password" && !input.value) return;
         payload[key] = input.type === "checkbox" ? input.checked : input.value;
         if (key === "player_tag") {
             payload[key] = formatPlayerTagInput(input.value);
@@ -2295,10 +3013,37 @@ function collectSectionPayload(section) {
 
     if (section === "debug" && payload.debug_view === false) {
         payload.advanced_debug_visuals = false;
-        payload.record_debug_preview_clips = false;
     }
 
     return payload;
+}
+
+function applySettingsSearch(query) {
+    const normalized = String(query || "").trim().toLowerCase();
+    const sections = Array.from(document.querySelectorAll("#view-settings .settings-section"));
+    let visibleSettings = 0;
+
+    sections.forEach((section) => {
+        const rows = Array.from(section.querySelectorAll(".setting-row, .timer-box"));
+        rows.forEach((row) => {
+            const matches = !normalized || row.textContent.toLowerCase().includes(normalized);
+            row.classList.toggle("settings-search-hidden", !matches);
+            if (matches) visibleSettings += 1;
+        });
+        section.classList.toggle(
+            "settings-search-hidden",
+            Boolean(normalized) && !rows.some((row) => !row.classList.contains("settings-search-hidden"))
+        );
+    });
+
+    const status = document.getElementById("settingsSearchStatus");
+    if (status) {
+        status.textContent = normalized && visibleSettings === 0
+            ? "No settings found"
+            : normalized
+                ? `${visibleSettings} setting${visibleSettings === 1 ? "" : "s"} found`
+                : "";
+    }
 }
 
 async function handlePlaystyleImport(event) {
@@ -2308,10 +3053,9 @@ async function handlePlaystyleImport(event) {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch("/api/playstyles/import", { method: "POST", body: formData });
-    const result = await response.json();
+    const result = await fetchJSON("/api/playstyles/import", { method: "POST", body: formData }, true);
 
-    if (!response.ok || !result.ok) {
+    if (!result.ok) {
         showToast(result.message || "Playstyle import failed.", "error");
         return;
     }
@@ -2330,10 +3074,9 @@ async function handleQueueImport(event) {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch("/api/queue/import", { method: "POST", body: formData });
-    const result = await response.json().catch(() => ({}));
+    const result = await fetchJSON("/api/queue/import", { method: "POST", body: formData }, true);
 
-    if (!response.ok || !result.ok) {
+    if (!result.ok) {
         showToast(result.message || "Queue import failed.", "error");
         event.target.value = "";
         return;
@@ -2376,6 +3119,18 @@ function getLiveBrawlerStats(brawlerName) {
     return state.playerInfo.stats[brawlerName] || {};
 }
 
+function hasLivePlayerStats() {
+    return Boolean(state.playerInfo.player_tag && Object.keys(state.playerInfo.stats || {}).length);
+}
+
+function getVisibleBrawlers() {
+    const brawlers = state.bootstrap?.brawlers || [];
+    if (!hasLivePlayerStats() || state.showAllBrawlers) {
+        return brawlers;
+    }
+    return brawlers.filter((item) => item.name in state.playerInfo.stats);
+}
+
 function getActivePlaystyle() {
     return state.bootstrap.playstyles.current || state.bootstrap.playstyles.items?.find((item) => item.is_active) || state.bootstrap.playstyles.items?.[0] || null;
 }
@@ -2404,45 +3159,19 @@ function matchesPlaystyleFilters(item) {
 }
 
 function queueTooltip(item) {
-    return `<strong>${escapeHtml(item.brawler)}</strong><br>${escapeHtml(item.current_label)}: ${item.current_value}<br>${escapeHtml(item.target_label)}: ${item.push_until}<br>Auto Pick: ${item.automatically_pick ? "On" : "Off"}`;
+    return [
+        String(item.brawler || ""),
+        `${item.current_label}: ${item.current_value}`,
+        `${item.target_label}: ${item.push_until}`,
+        `Auto Pick: ${item.automatically_pick ? "On" : "Off"}`,
+    ].join("\n");
 }
 
-function renderAuthMessage(result, variant = "error") {
-    const message = document.getElementById("authMessage");
-    if (!message) return;
 
-    if (!result?.message && !result?.code) {
-        message.className = "auth-message hidden";
-        message.innerHTML = "";
-        return;
-    }
 
-    const copy = AUTH_ERROR_COPY[result.code] || {};
-    const title = copy.title || (variant === "info" ? "Authentication check" : "Login failed");
-    const detail = copy.detail || result.message || "Try again. If it keeps failing, check the Python logs for the auth code.";
-    const meta = authMetaLine(result);
 
-    message.className = `auth-message ${variant === "info" ? "info" : ""}`;
-    message.innerHTML = `
-        <strong>${escapeHtml(title)}</strong>
-        <span>${escapeHtml(detail)}</span>
-        ${meta ? `<span class="meta-line">${escapeHtml(meta)}</span>` : ""}
-    `;
-}
 
-function authMetaLine(result) {
-    if (!result) return "";
-    const parts = [];
-    if (result.code) parts.push(`Code: ${result.code}`);
-    if (result.detected_version) parts.push(`Detected: ${result.detected_version}`);
-    if (result.max_version) parts.push(`Allowed: ${result.max_version}`);
-    return parts.join(" | ");
-}
 
-function formatAuthToast(result) {
-    const copy = AUTH_ERROR_COPY[result?.code];
-    return copy?.title || result?.message || "Login failed.";
-}
 
 function sortHistoryItems(a, b) {
     if (state.historySort === "winrate") return b.win_rate - a.win_rate || b.total_matches - a.total_matches;
@@ -2461,7 +3190,17 @@ function formatSignedNumber(value) {
 }
 
 async function fetchJSON(url, options = {}, allowFailure = false) {
-    const response = await fetch(url, options);
+    if (!UI_API_TOKEN) {
+        throw new Error("Local UI security token is missing.");
+    }
+
+    const headers = new Headers(options.headers || {});
+    headers.set("X-Pyla-UI-Token", UI_API_TOKEN);
+    const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: "same-origin",
+    });
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok && !allowFailure) {
@@ -2494,10 +3233,13 @@ function iconMarkup(name) {
         play:       `<svg ${S}><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>`,
         pause:      `<svg ${S}><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg>`,
         stop:       `<svg ${S}><rect width="18" height="18" x="3" y="3" rx="2"/></svg>`,
+        zap:        `<svg ${S}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
         import:     `<svg ${S}><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>`,
         close:      `<svg ${S}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
         logs:       `<svg ${S}><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></svg>`,
         copy:       `<svg ${S}><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+        search:     `<svg ${S}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>`,
+        trash:      `<svg ${S}><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 15H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>`,
     };
 
     return icons[name] || "";
@@ -2517,30 +3259,198 @@ function cssEscape(value) {
     return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-function showEarlyAccessModal() {
-    let eaModal = document.getElementById("earlyAccessModal");
-    if (!eaModal) {
-        eaModal = document.createElement("div");
-        eaModal.id = "earlyAccessModal";
-        eaModal.className = "modal-overlay";
-        eaModal.innerHTML = `
+
+function showPremiumModal() {
+    let modal = document.getElementById("premiumFeatureModal");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "premiumFeatureModal";
+        modal.className = "modal-overlay";
+        modal.innerHTML = `
             <div class="modal">
                 <div class="modal-header">
-                    <p class="eyebrow" style="color: #ff9f1a; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;">Premium Feature</p>
-                    <h3 style="font-size: 1.35rem; font-weight: 900; margin-bottom: 6px; color: white;">Unlock Premium Features</h3>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 10px; line-height: 1.55;">This feature (such as Player Tag API integration, Push All, and Advanced Debug Visuals) requires <strong>Premium</strong>.</p>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 12px; line-height: 1.55;">Check https://pyla-ai.angelfirela.dev/premium for more info</p>
+                    <p class="eyebrow premium-copy">Premium Feature</p>
+                    <h3>Unlock more automation</h3>
+                    <p>Profiles, live player data, Push All and selected advanced controls are available in Pyla Premium. The public edition remains free and open-source.</p>
                 </div>
-                <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 10px;">
-                    <a class="btn btn-primary w-full" href="https://pyla-ai.angelfirela.dev/premium" target="_blank" rel="noreferrer" style="background: #ff9f1a; border-color: transparent; color: black; font-weight: 800; box-shadow: 0 8px 20px rgba(255, 159, 26, 0.25);">Get Premium</a>
-                    <button id="closeEAModalBtn" class="btn w-full" style="font-weight: 700;">Maybe Later</button>
+                <div class="premium-modal-actions">
+                    <a class="btn btn-primary w-full premium-cta" href="https://pyla-ai.angelfirela.dev/premium" target="_blank" rel="noreferrer">Explore Premium</a>
+                    <button id="closePremiumModalBtn" class="btn w-full" type="button">Maybe later</button>
                 </div>
+            </div>`;
+        document.body.appendChild(modal);
+        document.getElementById("closePremiumModalBtn")?.addEventListener("click", () => modal.classList.add("hidden"));
+        modal.addEventListener("click", (event) => { if (event.target === modal) modal.classList.add("hidden"); });
+    }
+    modal.classList.remove("hidden");
+}
+
+async function refreshLogs() {
+    try {
+        const data = await fetchJSON("/api/runtime/logs", {}, true);
+        if (data && data.logs) {
+            renderLogsContent(data.logs);
+        }
+    } catch (e) {
+        console.error("Failed to fetch logs:", e);
+    }
+}
+
+function renderLogsContent(logs) {
+    const view = document.getElementById("view-logs");
+    if (!view) return;
+
+    if (!view.querySelector(".logs-layout")) {
+        view.innerHTML = `
+            <div class="logs-layout">
+                <section class="panel">
+                    <div class="panel-header logs-head">
+                        <div class="panel-actions logs-actions">
+                            <button id="btnCopyLogs" class="btn">Copy All</button>
+                            <button id="btnSaveLogs" class="btn">Save TXT</button>
+                            <button id="btnClearLogs" class="btn">Clear</button>
+                            <button id="btnScrollToggle" class="btn btn-primary">Auto-scroll: ON</button>
+                        </div>
+                    </div>
+                    <div class="logs-terminal-container">
+                        <div id="logsTerminal" class="logs-terminal"></div>
+                    </div>
+                </section>
             </div>
         `;
-        document.body.appendChild(eaModal);
-        document.getElementById("closeEAModalBtn").addEventListener("click", () => {
-            eaModal.classList.add("hidden");
-        });
+        document.getElementById("btnCopyLogs").addEventListener("click", copyAllLogs);
+        document.getElementById("btnSaveLogs").addEventListener("click", saveLogsToTxt);
+        document.getElementById("btnClearLogs").addEventListener("click", clearLogs);
+        document.getElementById("btnScrollToggle").addEventListener("click", toggleAutoScroll);
     }
-    eaModal.classList.remove("hidden");
+
+    const terminal = document.getElementById("logsTerminal");
+    if (!terminal) return;
+
+    const container = document.querySelector(".logs-terminal-container");
+    const wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 50;
+
+    if (logs.length === 0) {
+        terminal.innerHTML = `<div class="log-line text-muted">No logs recorded yet. Start the bot to see output.</div>`;
+    } else {
+        const currentLines = terminal.querySelectorAll(".log-line");
+        const hasPlaceholder = terminal.querySelector(".text-muted");
+        
+        const firstLineMatches = currentLines.length > 0
+            && currentLines[0].textContent === String(logs[0]);
+            
+        if (hasPlaceholder || currentLines.length > logs.length || !firstLineMatches) {
+            const fragment = document.createDocumentFragment();
+            logs.forEach((line) => {
+                const div = document.createElement("div");
+                div.className = "log-line";
+                div.textContent = String(line);
+                fragment.appendChild(div);
+            });
+            terminal.replaceChildren(fragment);
+        } else if (currentLines.length < logs.length) {
+            const fragment = document.createDocumentFragment();
+            for (let i = currentLines.length; i < logs.length; i++) {
+                const div = document.createElement("div");
+                div.className = "log-line";
+                div.textContent = String(logs[i]);
+                fragment.appendChild(div);
+            }
+            terminal.appendChild(fragment);
+        }
+    }
+
+    if (state.autoScrollLogs && (wasAtBottom || state.forceScrollLogs)) {
+        container.scrollTop = container.scrollHeight;
+        state.forceScrollLogs = false;
+    }
 }
+
+function copyAllLogs() {
+    const terminal = document.getElementById("logsTerminal");
+    if (!terminal) return;
+    
+    const lines = Array.from(terminal.querySelectorAll(".log-line"))
+        .map(el => el.textContent)
+        .filter(text => text !== "No logs recorded yet. Start the bot to see output.");
+        
+    const fullText = lines.join("\n");
+    if (!fullText) {
+        showToast("No logs to copy.", "error");
+        return;
+    }
+    
+    navigator.clipboard.writeText(fullText)
+        .then(() => showToast("Logs copied to clipboard.", "success"))
+        .catch(err => {
+            console.error("Could not copy logs: ", err);
+            showToast("Failed to copy logs.", "error");
+        });
+}
+
+function saveLogsToTxt() {
+    const terminal = document.getElementById("logsTerminal");
+    if (!terminal) return;
+    
+    const lines = Array.from(terminal.querySelectorAll(".log-line"))
+        .map(el => el.textContent)
+        .filter(text => text !== "No logs recorded yet. Start the bot to see output.");
+        
+    const fullText = lines.join("\n");
+    if (!fullText) {
+        showToast("No logs to save.", "error");
+        return;
+    }
+    
+    try {
+        const blob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        a.download = `pyla_bot_logs_${timestamp}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("Logs saved successfully.", "success");
+    } catch (err) {
+        console.error("Could not save logs: ", err);
+        showToast("Failed to save logs.", "error");
+    }
+}
+
+function toggleAutoScroll() {
+    state.autoScrollLogs = !state.autoScrollLogs;
+    const btn = document.getElementById("btnScrollToggle");
+    if (btn) {
+        btn.textContent = `Auto-scroll: ${state.autoScrollLogs ? "ON" : "OFF"}`;
+        btn.className = `btn btn-sm ${state.autoScrollLogs ? "btn-primary" : ""}`;
+    }
+    if (state.autoScrollLogs) {
+        state.forceScrollLogs = true;
+        const container = document.querySelector(".logs-terminal-container");
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+}
+
+async function clearLogs() {
+    try {
+        const result = await fetchJSON("/api/runtime/logs", { method: "DELETE" });
+        if (result.ok) {
+            showToast("Logs cleared.", "success");
+            state.forceScrollLogs = true;
+            await refreshLogs();
+        }
+    } catch (e) {
+        showToast("Failed to clear logs.", "error");
+    }
+}
+
+
+
+
+
+

@@ -41,6 +41,23 @@ def online_devices():
     return out
 
 
+def adb_device_port_sort_key(device: AdbDevice) -> tuple[float, int, str]:
+    """Sort TCP/emulator ADB devices by their effective ADB port."""
+    serial = device.serial
+    if ":" in serial:
+        try:
+            return int(serial.rsplit(":", 1)[1]), 0, serial
+        except ValueError:
+            pass
+    if serial.startswith("emulator-"):
+        try:
+            # Emulator serials contain the console port; ADB uses the next port.
+            return int(serial.removeprefix("emulator-")) + 1, 1, serial
+        except ValueError:
+            pass
+    return float("inf"), 2, serial
+
+
 def discover_device(verbose: bool = False) -> AdbDevice:
     preferred_port = load_toml_as_dict("cfg/general_config.toml").get("emulator_port")
 
@@ -91,10 +108,11 @@ def discover_device(verbose: bool = False) -> AdbDevice:
     if len(devices) == 1:
         return devices[0]
 
-    chosen = devices[0]
+    sorted_devices = sorted(devices, key=adb_device_port_sort_key)
+    chosen = sorted_devices[0]
     print(f"Multiple ADB devices online and no port configured. "
-          f"Picking {chosen.serial} (first one). Others: "
-          f"{[d.serial for d in devices if d is not chosen]}")
+          f"Picking {chosen.serial} (lowest ADB port). Others: "
+          f"{[d.serial for d in sorted_devices[1:]]}")
     return chosen
 
 class WindowController:
@@ -368,6 +386,23 @@ class WindowController:
         target_x = x * self.width_ratio
         target_y = y * self.height_ratio
         self.click(target_x, target_y, delay, touch_up=touch_up, touch_down=touch_down)
+
+    def type_text(self, text: str) -> bool:
+        """Type ASCII text into the currently focused Android input field."""
+        text = str(text)
+        if not text:
+            return True
+        if not text.isascii():
+            print(f"Cannot type non-ASCII text through ADB: {text!r}")
+            return False
+
+        try:
+            # Android's `input text` command uses %s to represent a space.
+            self.device.shell(["input", "text", text.replace(" ", "%s")], timeout=5)
+            return True
+        except Exception as exc:
+            print(f"Failed to type text through ADB: {exc}")
+            return False
 
     def swipe(self, start_x, start_y, end_x, end_y, duration=0.2):
         dist_x = end_x - start_x

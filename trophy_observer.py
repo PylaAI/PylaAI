@@ -1,9 +1,9 @@
+import csv
 import os
 import secrets
 import time
 import requests
 from utils import load_toml_as_dict, save_dict_as_toml, api_base_url, hash_playstyle, PYLA_VERSION, resolve_project_path
-import pandas as pd
 from enum import Enum
 from dataclasses import dataclass
 from typing import Optional
@@ -30,6 +30,15 @@ class ParsedGameResult:
 
 
 class TrophyObserver:
+
+    HISTORY_COLUMNS = [
+        "date_time", "brawler_name", "result", "current_trophies", "trophy_delta",
+        "new_winstreak", "playstyle_hash", "playstyle_name", "playstyle_gamemodes",
+        "playstyle_brawlers", "pyla_version", "power_level",
+    ]
+    INTEGER_HISTORY_COLUMNS = {
+        "current_trophies", "trophy_delta", "new_winstreak", "power_level",
+    }
 
     @staticmethod
     def _replace_when_available(source, destination):
@@ -110,29 +119,86 @@ class TrophyObserver:
         raise ValueError("Current trophies exceed all defined ranges")
 
     def load_history(self):
-        if os.path.exists(self.history_file):
-            history = pd.read_csv(self.history_file)
-        else:
-            history = pd.DataFrame(
-                columns=["date_time", "brawler_name", "result", "current_trophies", "trophy_delta", "new_winstreak",
-                         "playstyle_hash", "playstyle_name", "playstyle_gamemodes", "playstyle_brawlers",
-                         "pyla_version", "power_level"])
+        if os.path.exists(self.history_file) and os.path.getsize(self.history_file) > 0:
+            try:
+                with open(self.history_file, "r", encoding="utf-8-sig", newline="") as handle:
+                    reader = csv.DictReader(handle, strict=True)
+                    if not reader.fieldnames:
+                        raise ValueError("No columns to parse")
+
+                    missing_columns = [
+                        column for column in self.HISTORY_COLUMNS
+                        if column not in reader.fieldnames
+                    ]
+                    if missing_columns:
+                        raise ValueError(
+                            f"Missing required columns: {', '.join(missing_columns)}"
+                        )
+
+                    history = []
+                    for row in reader:
+                        if None in row:
+                            raise ValueError("A row contains more values than the CSV header")
+                        history.append(self._normalize_history_row(row))
+
+                return history
+            except Exception as e:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                backup = self.history_file.with_name(
+                    f"{self.history_file.stem}.corrupt-{timestamp}-{secrets.token_hex(3)}{self.history_file.suffix}"
+                )
+                os.replace(self.history_file, backup)
+                print(f"Error reading match history CSV ({e}). Preserved the corrupt file as {backup.name}.")
+
+        history = []
+        try:
+            self._atomic_save_history(history)
+        except Exception as e:
+            print(f"Error creating match history CSV: {e}")
         return history
 
     def save_history(self):
+        self._atomic_save_history(self.match_history)
+
+    def _atomic_save_history(self, history):
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.history_file.with_name(
             f".{self.history_file.name}.{secrets.token_hex(8)}.tmp"
         )
         try:
-            self.match_history.to_csv(temporary, index=False)
-            with open(temporary, "r+b") as handle:
+            with open(temporary, "w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=self.HISTORY_COLUMNS,
+                    lineterminator="\n",
+                )
+                writer.writeheader()
+                writer.writerows(history)
                 handle.flush()
                 os.fsync(handle.fileno())
             self._replace_when_available(temporary, self.history_file)
         finally:
             if temporary.exists():
                 temporary.unlink()
+
+    @classmethod
+    def _normalize_history_row(cls, row):
+        normalized = {
+            column: row.get(column, "")
+            for column in cls.HISTORY_COLUMNS
+        }
+        for column in cls.INTEGER_HISTORY_COLUMNS:
+            value = normalized[column]
+            if value in (None, ""):
+                continue
+            try:
+                normalized[column] = int(value)
+            except (TypeError, ValueError):
+                try:
+                    normalized[column] = int(float(value))
+                except (TypeError, ValueError):
+                    pass
+        return normalized
 
 
     def parse_game_result(self, raw_result: str) -> ParsedGameResult:
@@ -214,38 +280,49 @@ class TrophyObserver:
         if self.current_wins:
             print(f"Current Wins: {self.current_wins}")
 
-        self.match_history.loc[len(self.match_history)] = [datetime.now().isoformat(), current_brawler,
-                                                           parsed_result.result.value, old_trophies, trophy_delta,
-                                                           self.win_streak, hash_playstyle(playstyle_info),
-                                                           playstyle_info["name"],
-                                                           "|".join(playstyle_info["gamemodes"]),
-                                                           "|".join(playstyle_info["brawlers"]), PYLA_VERSION,
-                                                           (power_level if power_level is not None else -1)]
+        self.match_history.append({
+            "date_time": datetime.now().isoformat(),
+            "brawler_name": current_brawler,
+            "result": parsed_result.result.value,
+            "current_trophies": old_trophies,
+            "trophy_delta": trophy_delta,
+            "new_winstreak": self.win_streak,
+            "playstyle_hash": hash_playstyle(playstyle_info),
+            "playstyle_name": playstyle_info["name"],
+            "playstyle_gamemodes": "|".join(playstyle_info["gamemodes"]),
+            "playstyle_brawlers": "|".join(playstyle_info["brawlers"]),
+            "pyla_version": PYLA_VERSION,
+            "power_level": power_level if power_level is not None else -1,
+        })
         self.match_counter += 1
-        self.send_results_to_api()
+        if self.match_counter % 3 == 0:
+            self.send_results_to_api()
         self.save_history()
 
     def add_win(self, parsed_result: ParsedGameResult):
         if parsed_result.result == MatchResult.VICTORY:
             self.current_wins += 1
-        print("Current wins:", self.current_wins)
 
     def change_trophies(self, new):
         print(f"Trophies changed from {self.current_trophies} to {new}")
         self.current_trophies = new
 
     def send_results_to_api(self):
-        new_matches = self.match_history.iloc[self.last_sent_index:]
-        if new_matches.empty:
+        new_matches = self.match_history[self.last_sent_index:]
+        if not new_matches:
             return
-        payload = new_matches.to_dict(orient="records")
+        payload = [match.copy() for match in new_matches]
         if api_base_url != "localhost":
             try:
-                response = requests.post(f'https://{api_base_url}/api/matches', json=payload)
+                response = requests.post(
+                    f'https://{api_base_url}/api/matches',
+                    json=payload,
+                    timeout=(3.05, 10),
+                )
                 if response.status_code == 200:
                     print("Match history successfully sent to API")
                     self.last_sent_index = len(self.match_history)
                 else:
-                    print(f"Failed to send match history to API. Status code: {response.status_code}")
+                    print("Failed to send match history to API.")
             except requests.exceptions.RequestException as e:
                 print(f"Error sending match history to API: {e}")

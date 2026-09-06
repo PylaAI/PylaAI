@@ -3,85 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PylaAI</title>
+    <meta name="pyla-ui-token" content="{{ ui_api_token }}">
+    <title>PylaAI Public</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="/api/assets/support/logo.png">
+    <link rel="icon" type="image/png" href="/api/assets/support/logo_no_background.png">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
 </head>
 <body>
     <div id="vfx-bg"></div>
-
     <div class="app-layout">
-        <aside class="sidebar">
+        <aside id="appSidebar" class="sidebar" aria-label="Primary navigation">
             <div class="brand">
-                <img class="brand-logo" src="/api/assets/support/logo.png" alt="PylaAI logo">
-                <div class="brand-copy">
-                    <h1 class="brand-title">PylaAI</h1>
-                </div>
+                <img class="brand-logo" src="/api/assets/support/logo_no_background.png" alt="PylaAI logo">
+                <div class="brand-copy"><h1 class="brand-title">Pyla<span>AI</span></h1></div>
+                <button id="sidebarClose" class="sidebar-close" type="button" aria-label="Close navigation menu">
+                    <span aria-hidden="true">&times;</span>
+                </button>
             </div>
-
+            <p class="official-note">PylaAI is free. If someone sold you a copy, join the <a id="officialDiscordLink" href="#" target="_blank" rel="noreferrer">official Discord</a>.</p>
             <nav class="nav-menu"></nav>
-
             <div class="sidebar-footer">
-                <div class="system-status">
-                    <span id="sidebarIndicator" class="status-indicator"></span>
-                    <div class="status-text">
-                        <span id="sidebarVersion">PylaAI</span>
-                        <span id="sidebarStatus">Preparing local session...</span>
-                    </div>
+                <div class="sidebar-links" aria-label="PylaAI links">
+                    <a id="sidebarDiscordLink" class="sidebar-link" href="#" target="_blank" rel="noreferrer" data-tooltip="Open the official Discord"><img src="/api/assets/support/discord_logo.png" alt=""><span>Join the Official Discord</span></a>
+                    <a class="sidebar-link" href="https://github.com/PylaAI/PylaAI" target="_blank" rel="noreferrer" data-tooltip="Source code on GitHub"><img src="/api/assets/support/github.svg" alt=""><span>Public source code</span></a>
+                    <a id="sidebarPremiumLink" class="sidebar-link premium-link premium-cta" href="https://pyla-ai.angelfirela.dev/premium" target="_blank" rel="noreferrer" data-tooltip="Premium features"><span>Explore Premium</span></a>
                 </div>
+                <div id="sidebarVersion" class="sidebar-version">PylaAI Public</div>
             </div>
         </aside>
+        <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="Close navigation menu" tabindex="-1"></button>
 
         <main class="main-content">
             <header class="topbar">
-                <div>
+                <div class="topbar-title">
+                    <button id="menuToggle" class="menu-toggle" type="button" aria-label="Open navigation menu" aria-controls="appSidebar" aria-expanded="false">
+                        <span aria-hidden="true"></span>
+                        <span aria-hidden="true"></span>
+                        <span aria-hidden="true"></span>
+                    </button>
                     <h2 id="pageTitle" class="page-title">Dashboard</h2>
                 </div>
 
                 <div class="header-actions">
-                    <span id="runtimeStatusPill" class="badge badge-outline">Idle</span>
-                    <span id="authStatusPill" class="badge badge-outline">Offline</span>
+                    <label class="language-selector" title="Choose interface language" data-i18n-skip>
+                        <select id="languageSelect" aria-label="Choose interface language">
+                            <option value="en" lang="en">EN</option>
+                            <option value="ru" lang="ru">RU</option>
+                            <option value="ko" lang="ko">KO</option>
+                            <option value="fr" lang="fr">FR</option>
+                            <option value="es" lang="es">ES</option>
+                        </select>
+                    </label>
                 </div>
             </header>
-
             <div id="alertStack" class="alerts-container"></div>
-
-            <div class="views-wrapper">
-                <section id="view-dashboard" class="view active"></section>
-                <section id="view-queue" class="view"></section>
-                <section id="view-playstyles" class="view"></section>
-                <section id="view-history" class="view"></section>
-                <section id="view-settings" class="view"></section>
+            <div class="views-scroll-shell">
+                <div id="viewsWrapper" class="views-wrapper">
+                    <section id="view-dashboard" class="view active"></section>
+                    <section id="view-queue" class="view"></section>
+                    <section id="view-playstyles" class="view"></section>
+                    <section id="view-history" class="view"></section>
+                    <section id="view-logs" class="view"></section>
+                    <section id="view-settings" class="view"></section>
+                </div>
+                <div id="mainViewScrollbar" class="app-scrollbar main-view-scrollbar" role="scrollbar" aria-controls="viewsWrapper" aria-orientation="vertical" aria-label="Scroll current page" tabindex="0"><div id="mainViewScrollbarThumb" class="app-scrollbar-thumb"></div></div>
             </div>
-
             <div id="queueDock" class="queue-dock hidden"></div>
         </main>
     </div>
-
-    <div id="authModal" class="modal-overlay hidden">
-        <div class="modal">
-            <div class="modal-header">
-                <p class="eyebrow">Authentication Required</p>
-                <h3>Enter your Pyla API key</h3>
-                <p id="authInstructions">Use <code>/generate_key</code> if you bought via Patreon, or <code>/refresh_key</code> if you bought a temporary key, with PylaBot in Discord, then paste the key here. Your key is handled by Python only and is not rendered back into the UI.</p>            </div>
-
-            <form id="authForm" class="modal-form">
-                <label class="input-group">
-                    <span>API Key</span>
-                    <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste your key">
-                </label>
-                <div id="authMessage" class="auth-message hidden"></div>
-                <button id="authSubmitBtn" class="btn btn-primary w-full" type="submit">Unlock UI</button>
-            </form>
-        </div>
-    </div>
-
     <div id="tooltip" class="tooltip hidden"></div>
     <div id="toast" class="toast hidden"></div>
-
+    <script src="{{ url_for('static', filename='js/i18n_es_ko.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
+import hmac
 import logging
+import secrets
 import threading
+from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.exceptions import HTTPException
 
 from discord_bot import DiscordBot
-from utils import get_brawler_icon_path, resolve_project_path
+from utils import get_brawler_icon_path, resolve_project_path, resolve_within
 from .runtime import RuntimeManager
 from .services import WebDataService
 
@@ -39,7 +43,7 @@ class _SupressHistoryPolling(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         return not (
-            'GET /api/history ' in message
+            'GET /api/history' in message
             and ' 200 -' in message
         )
 
@@ -87,6 +91,8 @@ def create_app(pyla_main, start_discord_bot=False):
         template_folder=str(resolve_project_path("templates")),
         static_folder=str(resolve_project_path("static")),
     )
+    app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
+    app.config["UI_API_TOKEN"] = secrets.token_urlsafe(32)
 
     runtime_manager = RuntimeManager(pyla_main)
     data_service = WebDataService(runtime_manager)
@@ -100,9 +106,72 @@ def create_app(pyla_main, start_discord_bot=False):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
     _configure_request_logging()
 
+    def _parsed_request_host():
+        try:
+            return urlsplit(f"//{request.host}")
+        except ValueError:
+            return None
+
+    def _is_allowed_origin(origin: str) -> bool:
+        try:
+            parsed_origin = urlsplit(origin)
+            parsed_host = _parsed_request_host()
+            if parsed_host is None:
+                return False
+            return (
+                parsed_origin.scheme in {"http", "https"}
+                and parsed_origin.hostname in {"127.0.0.1", "localhost", "::1"}
+                and parsed_origin.hostname == parsed_host.hostname
+                and parsed_origin.port == parsed_host.port
+            )
+        except ValueError:
+            return False
+
+    @app.before_request
+    def protect_local_control_api():
+        parsed_host = _parsed_request_host()
+        if parsed_host is None or parsed_host.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            return jsonify({
+                "ok": False,
+                "message": "Invalid local UI host.",
+                "code": "INVALID_LOCAL_HOST",
+            }), 403
+
+        if not request.path.startswith("/api/") or request.path.startswith("/api/assets/"):
+            return None
+
+        supplied_token = str(request.headers.get("X-Pyla-UI-Token", ""))
+        if not hmac.compare_digest(supplied_token, app.config["UI_API_TOKEN"]):
+            return jsonify({
+                "ok": False,
+                "message": "Invalid local UI session.",
+                "code": "INVALID_UI_SESSION",
+            }), 403
+
+        origin = str(request.headers.get("Origin", "")).strip()
+        if origin and not _is_allowed_origin(origin):
+            return jsonify({
+                "ok": False,
+                "message": "Cross-origin local API request rejected.",
+                "code": "INVALID_UI_ORIGIN",
+            }), 403
+
+        return None
+
+    @app.after_request
+    def add_local_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/")
     def index():
-        return render_template("index.html")
+        return render_template(
+            "index.html",
+            ui_api_token=app.config["UI_API_TOKEN"],
+        )
 
     @app.get("/api/bootstrap")
     def bootstrap():
@@ -121,17 +190,6 @@ def create_app(pyla_main, start_discord_bot=False):
             return error
         app.logger.exception("Unhandled request error at %s", request.path)
         return jsonify({"ok": False, "message": str(error)}), 500
-
-    @app.post("/api/login/validate")
-    def validate_login():
-        payload = request.get_json(silent=True) or {}
-        result = data_service.validate_login(payload.get("api_key", ""))
-        return jsonify(result), (200 if result.get("ok") else 400)
-
-    @app.get("/api/player-info")
-    def player_info():
-        result = data_service.get_player_info_payload(request.args.get("tag", ""))
-        return jsonify(result), (200 if result.get("ok") else 400)
 
     @app.get("/api/queue")
     def get_queue():
@@ -161,11 +219,6 @@ def create_app(pyla_main, start_discord_bot=False):
         payload = request.get_json(silent=True) or {}
         items = data_service.reorder_queue(payload.get("order", []))
         return jsonify({"ok": True, "items": items})
-
-    @app.post("/api/queue/push-all-to-target")
-    def push_all_to_target():
-        result = data_service.push_all_to_default_target()
-        return jsonify({"ok": True, **result})
 
     @app.delete("/api/queue")
     def clear_queue():
@@ -239,9 +292,38 @@ def create_app(pyla_main, start_discord_bot=False):
         status_code = 200 if result.get("ok") else 409
         return jsonify({**result, "runtime": runtime_manager.get_status()}), status_code
 
+    @app.get("/api/runtime/logs")
+    def runtime_logs():
+        return jsonify({"ok": True, "logs": runtime_manager.get_logs()})
+
+    @app.delete("/api/runtime/logs")
+    def clear_runtime_logs():
+        runtime_manager.clear_logs()
+        return jsonify({"ok": True, "items": []})
+
     @app.get("/api/history")
     def history():
-        return jsonify(data_service.get_match_history_payload())
+        start_date_raw = str(request.args.get("start_date", "")).strip()
+        end_date_raw = str(request.args.get("end_date", "")).strip()
+        try:
+            start_date = date.fromisoformat(start_date_raw) if start_date_raw else None
+            end_date = date.fromisoformat(end_date_raw) if end_date_raw else None
+        except ValueError:
+            return jsonify({
+                "ok": False,
+                "message": "History dates must use the YYYY-MM-DD format.",
+            }), 400
+
+        if start_date and end_date and start_date > end_date:
+            return jsonify({
+                "ok": False,
+                "message": "The history start date must be on or before the end date.",
+            }), 400
+
+        return jsonify(data_service.get_match_history_payload(
+            start_date=start_date,
+            end_date=end_date,
+        ))
 
     @app.get("/api/assets/brawlers/<path:brawler_name>")
     def brawler_icon(brawler_name: str):
@@ -252,8 +334,11 @@ def create_app(pyla_main, start_discord_bot=False):
 
     @app.get("/api/assets/support/<path:filename>")
     def support_asset(filename: str):
-        target = resolve_project_path("images", filename)
-        if not target.exists():
+        try:
+            target = resolve_within("images", filename)
+        except ValueError:
+            return ("", 404)
+        if not target.is_file():
             return ("", 404)
         return send_file(target)
 

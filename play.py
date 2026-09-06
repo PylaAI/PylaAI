@@ -6,13 +6,6 @@ import numpy as np
 import os
 
 from detect import Detect
-try:
-    from early_access.early_access import add_advanced_visuals
-    early_access = True
-except ImportError:
-    early_access = False
-    def add_advanced_visuals(a, b):
-        return None
 from state_finder import get_state
 from utils import load_toml_as_dict, count_hsv_pixels, load_brawlers_info, interpret_pyla_code, \
     count_mask_pixels, JOYSTICK_RADIUS, clamp, config_bool, is_safe_ast
@@ -727,7 +720,7 @@ class Play:
             "super_range": 0,
             "poison_gas": {},
             "movement": None,
-            "joystick": [self.window_controller.joystick_x, self.window_controller.joystick_y],
+            "joystick": [self.window_controller.movement_joystick_x, self.window_controller.movement_joystick_y],
             "advanced_visuals": advanced_visuals,
             "joystick_radius": int(JOYSTICK_RADIUS * (self.window_controller.scale_factor or 1)),
             "joystick_directions": [],
@@ -750,8 +743,6 @@ class Play:
                     debug_data["poison_gas"] = self.is_there_poison_gas(debug_data["player"][0])
                 except Exception:
                     pass
-                if advanced_visuals and early_access:
-                    add_advanced_visuals(self, debug_data)
 
         if movement is not None:
             debug_data["movement"] = [float(movement[0]), float(movement[1])]
