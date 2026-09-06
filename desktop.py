@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-import importlib
 import os
 import sys
 import threading
@@ -137,7 +136,11 @@ def import_webview() -> tuple[Any | None, Exception | None]:
     """Return the optional pywebview module, or the reason it could not load."""
     unblock_bundled_webview_binaries()
     try:
-        return importlib.import_module("webview"), None
+        # Keep this as a regular import so PyInstaller can discover pywebview
+        # and run its hook, which bundles the Windows WebView2/.NET files.
+        import webview
+
+        return webview, None
     except Exception as error:
         return None, error
 
