@@ -1,5 +1,5 @@
-webhook_url = "https://discord.com/api/webhooks/1391144183233904660/uMInftNHkS-DQr51wW0mcikWxKQdcVL1N_MDy466y-yZ070AH2a3PWPZS03ivnIvMcoq"
-discord_id = "https://discord.com/api/webhooks/1391144183233904660/uMInftNHkS-DQr51wW0mcikWxKQdcVL1N_MDy466y-yZ070AH2a3PWPZS03ivnIvMcoq"
+webhook_url = ""
+discord_id = ""
 ping_when_stuck = true
 ping_when_target_is_reached = true
 ping_every_x_match = 1
