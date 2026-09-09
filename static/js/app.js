@@ -92,6 +92,8 @@ const state = {
     bootstrap: null,
     currentView: "dashboard",
     selectedBrawler: "",
+    boWarningDismissed: false,
+    boWarningFromPushAll: false,
     queueTargetType: "trophies",
     brawlerSearch: "",
     brawlerSort: getStorageItem("brawlerSort", "alphabetical"),
@@ -715,6 +717,22 @@ function getPlayerPillState() {
     };
 }
 
+function renderBoSelectionWarning() {
+    const boIsSelected = state.selectedBrawler.toLowerCase() === "bo";
+    if ((!boIsSelected && !state.boWarningFromPushAll) || state.boWarningDismissed) return "";
+
+    return `
+        <aside id="boSelectionWarning" class="bo-selection-warning" role="alert">
+            <span class="bo-selection-warning-icon" aria-hidden="true">!</span>
+            <div class="bo-selection-warning-copy">
+                <strong>Before using Bo</strong>
+                <span>Sort your brawlers by Name in Brawl Stars, or the bot will pick Bonnie instead.</span>
+            </div>
+            <button id="dismissBoWarningBtn" class="bo-selection-warning-dismiss" type="button" aria-label="Dismiss Bo warning" title="Dismiss Bo warning">&times;</button>
+        </aside>
+    `;
+}
+
 function renderQueue() {
     const view = document.getElementById("view-queue");
     const hasValidPlayerInfo = hasLivePlayerStats();
@@ -762,6 +780,8 @@ function renderQueue() {
                         <span>${escapeHtml(playerPill.detail)}</span>
                     </div>
                 </div>
+
+                ${renderBoSelectionWarning()}
 
                 <div class="queue-toolbar">
                     <div class="queue-toolbar-fields">
@@ -2658,6 +2678,12 @@ function bindQueueEvents() {
     });
 
     document.getElementById("saveQueueItemBtn")?.addEventListener("click", saveQueueItem);
+
+    document.getElementById("dismissBoWarningBtn")?.addEventListener("click", () => {
+        state.boWarningDismissed = true;
+        state.boWarningFromPushAll = false;
+        document.getElementById("boSelectionWarning")?.remove();
+    });
 }
 
 function bindBrawlerCardEvents() {

@@ -628,6 +628,57 @@ input:focus, select:focus { border-color: var(--brand-main); box-shadow: 0 0 0 3
     }
 
 .brawlers-layout > .panel:last-child { align-self: start; position: sticky; top: 0; max-height: 100%; overflow-y: auto; }
+.bo-selection-warning {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    gap: 11px;
+    align-items: start;
+    margin-bottom: 18px;
+    padding: 13px 12px;
+    color: #ffe2a8;
+    background: linear-gradient(135deg, rgba(255, 170, 0, 0.17), rgba(255, 115, 0, 0.09));
+    border: 1px solid rgba(255, 184, 77, 0.58);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(255, 145, 0, 0.08);
+}
+.bo-selection-warning-icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    color: #271600;
+    background: #ffb84d;
+    border-radius: 50%;
+    font-size: 1rem;
+    font-weight: 900;
+}
+.bo-selection-warning-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bo-selection-warning-copy strong { color: #ffc96f; font-size: 0.88rem; }
+.bo-selection-warning-copy span { color: #ffe7bb; font-size: 0.8rem; font-weight: 600; line-height: 1.42; }
+.bo-selection-warning-dismiss {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: #ffd68e;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 214, 142, 0.25);
+    border-radius: 50%;
+    font: inherit;
+    font-size: 1.15rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.bo-selection-warning-dismiss:hover,
+.bo-selection-warning-dismiss:focus-visible {
+    color: #fff4df;
+    background: rgba(255, 184, 77, 0.19);
+    border-color: rgba(255, 214, 142, 0.58);
+    outline: none;
+    transform: scale(1.06);
+}
 .brawler-grid-shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 14px;
