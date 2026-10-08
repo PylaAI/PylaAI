@@ -32,3 +32,10 @@ pyla-v0.9.6.zip
 api/namcheap_app.py
 api/bot.py
 api/ANNOUNCEMENTS.md
+/benchmark_results
+/clips
+/tools
+pyla-v0.9.9.zip
+pyla_clip_recorder.exe
+tests/test_clip_buffering.py
+tests/test_scrcpy_protocol.py

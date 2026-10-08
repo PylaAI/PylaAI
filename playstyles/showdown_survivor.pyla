@@ -52,7 +52,7 @@ def no_enemy_movement():
 
 def avoid_poison_gas():
     opposite_direction = {"up": JOYSTICK_RADIUS, "down": -JOYSTICK_RADIUS, "left": JOYSTICK_RADIUS, "right": -JOYSTICK_RADIUS}
-    poison_gas = is_there_poison_gas(player_data)
+    poison_gas = is_there_poison_gas(player_data, area_from_player_checked=3)
     x, y = 0, 0
     if poison_gas["up"] or poison_gas["down"]:
         if poison_gas["up"] > poison_gas["down"]:
