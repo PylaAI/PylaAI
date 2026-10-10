@@ -5,7 +5,7 @@ import cv2
 from utils import (
     count_hsv_pixels,
     load_toml_as_dict, config_bool, load_brawlers_info,
-    normalize_brawler_filename,
+    normalize_brawler_filename, sleep_ui, ui_delay,
 )
 
 
@@ -48,7 +48,7 @@ class LobbyAutomation:
 
     @staticmethod
     def _sleep_interruptible(duration, runtime_control=None, stop_event=None, poll_interval=0.1):
-        end_time = time.time() + duration
+        end_time = time.time() + ui_delay(duration)
         while time.time() < end_time:
             if LobbyAutomation._should_interrupt(runtime_control, stop_event):
                 return True
@@ -66,7 +66,7 @@ class LobbyAutomation:
 
         x, y = load_toml_as_dict("cfg/buttons_config.toml")["brawlers_menu"]
         self.window_controller.click(x, y, already_include_ratio=False)
-        time.sleep(1.25)
+        sleep_ui(1.25)
         print("Automatic brawler selection started for", brawler_search_name)
         for i in range(100):
             if self._should_interrupt(runtime_control, stop_event):
@@ -76,7 +76,7 @@ class LobbyAutomation:
             current_state = get_latest_state()
             if current_state == "shop":
                 print("Brawler menu is still opening")
-                time.sleep(1)
+                sleep_ui(1)
                 continue
 
             if current_state != "brawler_selection":

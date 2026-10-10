@@ -965,5 +965,20 @@
         "super_projectile_speed": 1196,
         "super_range": 320,
         "super_type": "damage"
+    },
+    "cosmo": {
+        "attack_projectile_radius": 300,
+        "attack_projectile_speed": 4000,
+        "attack_range": 576,
+        "hold_attack": 0,
+        "ignore_walls_for_attacks": false,
+        "ignore_walls_for_supers": false,
+        "rarity": "Mythic",
+        "safe_range": 354,
+        "speed": 750,
+        "super_projectile_radius": 0,
+        "super_projectile_speed": 4000,
+        "super_range": 597,
+        "super_type": "other_target"
     }
 }

@@ -281,6 +281,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             if state is None:
                 return
             self.set_latest_state(state)
+            if state != "match":
+                self.Play.match_logger.stop("state_changed", state)
 
             print(f"State: {state}")
             frame_data = None

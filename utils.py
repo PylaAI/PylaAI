@@ -16,6 +16,22 @@ import cv2
 from packaging import version
 import traceback
 
+UI_DELAY_EXTRA_RATIO = 0.2
+UI_DELAY_EXTRA_CAP_SECONDS = 0.35
+
+
+def ui_delay(minimum_seconds):
+    """Keep the existing UI wait as a minimum, with bounded extra time."""
+    if minimum_seconds <= 0:
+        return minimum_seconds
+    extra_limit = min(minimum_seconds * UI_DELAY_EXTRA_RATIO, UI_DELAY_EXTRA_CAP_SECONDS)
+    return minimum_seconds + random.uniform(0, extra_limit)
+
+
+def sleep_ui(minimum_seconds):
+    time.sleep(ui_delay(minimum_seconds))
+
+
 def get_brawler_stats(_player_info, _brawler_name):
     return None, None
 

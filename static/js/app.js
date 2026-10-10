@@ -124,6 +124,7 @@ const SETTINGS_META = {
         { key: "auto_load_queue_on_startup", label: "Load Queue On Startup", type: "checkbox", help: "Load the latest saved queue when the web UI starts." },
     ],
     debug: [
+        { key: "match_logging", label: "Match Logging", type: "checkbox", help: "Save compressed match diagnostics in match_logs. Restart the bot after changing this setting." },
         { key: "verbose_debug", label: "Verbose Debug", type: "checkbox", help: "Enable extra runtime debugging output." },
         { key: "state_finder_debug", label: "State Finder Debug", type: "checkbox", help: "Enable state finder logging output." },
         { key: "re_apply_movement", label: "Re-apply Movement", type: "checkbox", help: "Keep sending joystick movement even when the target position has not changed." },
@@ -1682,6 +1683,10 @@ function renderSettings() {
     const view = document.getElementById("view-settings");
 
     view.innerHTML = `
+        <div class="panel-header compact-header">
+            <button id="publicSettingsImport" class="btn" type="button">Import from older version</button>
+            <button id="publicDevicePicker" class="btn" type="button">Select emulator device</button>
+        </div>
         <div class="settings-search-wrap">
             ${iconMarkup("search")}
             <input id="settingsSearch" class="settings-search" type="search" placeholder="Find a setting" aria-label="Search settings" value="${escapeHtml(state.settingsSearch || "")}">
@@ -1758,6 +1763,8 @@ function renderSettings() {
         </div>
     `;
 
+    document.getElementById("publicSettingsImport")?.addEventListener("click", openPublicSettingsImport);
+    document.getElementById("publicDevicePicker")?.addEventListener("click", openPublicDevicePicker);
     bindSettingsEvents();
     applySettingsSearch(state.settingsSearch || "");
 }
@@ -3462,3 +3469,81 @@ async function clearLogs() {
 
 
 
+
+
+function publicPortModal(title, content) {
+    document.getElementById("publicPortModal")?.closePortModal();
+    const overlay = document.createElement("div");
+    overlay.id = "publicPortModal";
+    overlay.className = "modal-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", title);
+    overlay.innerHTML = `<section class="modal" style="max-height:calc(100vh - 32px);overflow-y:auto"><div class="panel-header compact-header"><h3>${escapeHtml(title)}</h3><button class="btn" data-close type="button">Close</button></div>${content}<p data-status role="status"></p></section>`;
+    document.body.appendChild(overlay);
+    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+    overlay.closePortModal = close;
+    const onKey = event => { if (event.key === "Escape") close(); };
+    overlay.querySelector("[data-close]").addEventListener("click", close);
+    overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
+    document.addEventListener("keydown", onKey);
+    overlay.querySelector("input, button")?.focus();
+    return overlay;
+}
+
+function openPublicSettingsImport() {
+    const modal = publicPortModal("Import settings", `<p>Enter an older installation folder or its cfg folder. Supported settings will replace your current values. Stop the bot before importing.</p><label>Installation folder <input data-folder type="text" placeholder="Older installation folder" style="width:100%"></label><button data-import class="btn btn-primary" type="button">Import settings</button>`);
+    const button = modal.querySelector("[data-import]");
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        const status = modal.querySelector("[data-status]");
+        status.textContent = "Importing settings...";
+        try {
+            const result = await fetchJSON("/api/settings/import", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({folder_path: modal.querySelector("[data-folder]").value})});
+            state.bootstrap = await fetchJSON("/api/bootstrap");
+            renderSettings();
+            status.textContent = `${result.message} ${result.skipped} values skipped. ${(result.skipped_details || []).join("; ")}`;
+            showToast(result.message, "success");
+        } catch (error) { status.textContent = error.message; }
+        finally { button.disabled = false; }
+    });
+}
+
+function openPublicDevicePicker() {
+    const modal = publicPortModal("Select emulator device", `<p>Select a running emulator connection. Restart the bot to use a new device.</p><button data-scan class="btn" type="button">Refresh</button> <button data-deep class="btn" type="button">Deep scan</button><div data-devices></div>`);
+    const status = modal.querySelector("[data-status]");
+    const buttons = [...modal.querySelectorAll("[data-scan], [data-deep]")];
+    const scan = async deep => {
+        buttons.forEach(button => button.disabled = true);
+        status.textContent = deep ? "Scanning local ports; this may take a while..." : "Scanning running emulators...";
+        try {
+            const result = await fetchJSON(deep ? "/api/adb/devices/scan" : "/api/adb/devices", deep ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({deep: true})} : {});
+            if (!modal.isConnected) return;
+            const list = modal.querySelector("[data-devices]");
+            list.replaceChildren();
+            for (const device of result.devices) {
+                const button = document.createElement("button");
+                button.className = "btn";
+                button.style.cssText = "display:block;width:100%;margin-top:8px";
+                button.type = "button";
+                button.disabled = device.port === null;
+                button.textContent = `${device.serial}${device.port === result.selected_port ? " (selected)" : ""}${device.port === null ? " (USB device; no emulator port)" : ""}`;
+                button.addEventListener("click", async () => {
+                    button.disabled = true;
+                    try {
+                        state.bootstrap.settings.general = await fetchJSON("/api/settings/general", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({emulator_port: device.port})});
+                        renderSettings();
+                        status.textContent = `Selected ${device.serial}. Restart the bot to connect.`;
+                    } catch (error) { status.textContent = error.message; }
+                    finally { button.disabled = false; }
+                });
+                list.appendChild(button);
+            }
+            status.textContent = result.devices.length ? "Select an emulator above." : "No online devices found. Enable emulator USB debugging, then try a deep scan.";
+        } catch (error) { status.textContent = error.message; }
+        finally { buttons.forEach(button => button.disabled = false); }
+    };
+    buttons[0].addEventListener("click", () => scan(false));
+    buttons[1].addEventListener("click", () => scan(true));
+    scan(false);
+}

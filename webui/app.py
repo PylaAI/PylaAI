@@ -250,6 +250,20 @@ def create_app(pyla_main, start_discord_bot=False):
         result = data_service.activate_playstyle(payload.get("filename", ""))
         return jsonify(result)
 
+    @app.post("/api/settings/import")
+    def import_settings():
+        payload = request.get_json(silent=True) or {}
+        return jsonify(data_service.import_settings_from_folder(payload.get("folder_path", "")))
+
+    @app.get("/api/adb/devices")
+    def get_adb_devices():
+        return jsonify(data_service.scan_adb_devices())
+
+    @app.post("/api/adb/devices/scan")
+    def scan_adb_devices():
+        payload = request.get_json(silent=True) or {}
+        return jsonify(data_service.scan_adb_devices(deep=payload.get("deep") is True))
+
     @app.get("/api/settings/<section>")
     def get_settings(section: str):
         return jsonify(data_service.get_settings_payload(section))

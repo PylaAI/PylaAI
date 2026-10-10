@@ -5,6 +5,8 @@ from datetime import date, datetime
 import json
 import logging
 import shutil
+import threading
+import toml
 from pathlib import Path
 from typing import Any
 from packaging import version
@@ -65,6 +67,7 @@ class WebDataService:
     }
 
     DEBUG_FIELDS: dict[str, tuple[str, Any]] = {
+        "match_logging": ("bool", False),
         "verbose_debug": ("bool", False),
         "state_finder_debug": ("bool", False),
         "re_apply_movement": ("bool", True),
@@ -116,6 +119,7 @@ class WebDataService:
     }
 
     def __init__(self, runtime_manager):
+        self._adb_scan_lock = threading.Lock()
         self.runtime_manager = runtime_manager
         self._latest_version_cache: str | None = None
         self._announcements_cache: list[dict[str, Any]] | None = None
@@ -967,3 +971,113 @@ class WebDataService:
             "history": self.get_match_history_payload(),
             "brawlers": self.get_brawler_catalog(),
         }
+
+    def import_settings_from_folder(self, folder_path):
+        self._assert_queue_editable()
+        raw = str(folder_path or "").strip().strip('"').strip("'")
+        if not raw:
+            raise ValueError("Enter the old installation folder.")
+        root = Path(raw).expanduser().resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError("The import path must be a folder.")
+        candidates = [root] + sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name.lower())
+        source = root if root.name.lower() == "cfg" else next((p / "cfg" for p in candidates if (p / "cfg").is_dir()), None)
+        if source is None:
+            raise ValueError("No cfg folder found in that folder or its immediate subfolders.")
+        sections = {
+            "general": (self.GENERAL_FIELDS, "general_config.toml"),
+            "bot": (self.BOT_FIELDS, "bot_config.toml"),
+            "timers": (self.TIMER_FIELDS, "time_tresholds.toml"),
+            "debug": (self.DEBUG_FIELDS, "debug_settings.toml"),
+            "webhook": (self.WEBHOOK_FIELDS, "webhook_config.toml"),
+        }
+        imported, skipped = 0, []
+        for section, (schema, filename) in sections.items():
+            path = source / filename
+            if section == "timers" and not path.exists():
+                path = source / "time_thresholds.toml"
+            if not path.is_file():
+                continue
+            try:
+                with path.open(encoding="utf-8-sig") as handle:
+                    values = toml.load(handle)
+            except Exception as exc:
+                skipped.append(f"{filename}: {exc}")
+                continue
+            for key, value in values.items():
+                if key not in schema:
+                    skipped.append(f"{section}.{key}: unsupported setting")
+                    continue
+                # These existing public flags belong to paid-only features.
+                if key in {"advanced_debug_visuals", "record_debug_preview_clips"}:
+                    skipped.append(f"{section}.{key}: not imported")
+                    continue
+                try:
+                    value_type = schema[key][0]
+                    if value_type in {"bool", "bool_str"} and str(value).strip().lower() not in {"true", "false", "yes", "no", "on", "off", "1", "0"}:
+                        raise ValueError("Expected a boolean")
+                    if value_type == "int" and (isinstance(value, bool) or float(value) != int(value)):
+                        raise ValueError("Expected a whole number")
+                    choices = {"play_order": self.PLAY_ORDER_VALUES, "interface_mode": self.INTERFACE_MODE_VALUES,
+                               "cpu_or_gpu": self.CPU_OR_GPU_VALUES}
+                    if value_type in choices and str(value).strip().lower() not in choices[value_type]:
+                        raise ValueError("Unsupported option")
+                    if value_type == "auto_int" and str(value).strip().lower() != "auto":
+                        if isinstance(value, bool) or float(value) != int(value) or int(value) < 1:
+                            raise ValueError("Expected auto or a positive whole number")
+                    parsed = self._deserialize(value_type, value)
+                    if isinstance(parsed, (int, float)) and not isinstance(parsed, bool):
+                        import math
+                        if not math.isfinite(parsed) or parsed < 0:
+                            raise ValueError("Expected a finite nonnegative number")
+                        if key.endswith("confidence") and parsed > 1:
+                            raise ValueError("Confidence must be between 0 and 1")
+                        if key == "emulator_port" and not 1 <= parsed <= 65535:
+                            raise ValueError("Port must be between 1 and 65535")
+                        if key in {"debug_view_fps", "trophies_multiplier"} and parsed < 1:
+                            raise ValueError("Value must be at least 1")
+                    self.update_settings(section, {key: parsed})
+                    imported += 1
+                except (TypeError, ValueError, OverflowError, OSError) as exc:
+                    skipped.append(f"{section}.{key}: {exc}")
+        return {"ok": True, "message": f"Imported {imported} settings.", "imported": imported,
+                "skipped": len(skipped), "skipped_details": skipped}
+
+    def scan_adb_devices(self, deep=False):
+        if not self._adb_scan_lock.acquire(blocking=False):
+            raise ValueError("An ADB scan is already running.")
+        try:
+            return self._scan_adb_devices_unlocked(deep)
+        finally:
+            self._adb_scan_lock.release()
+
+    def _scan_adb_devices_unlocked(self, deep=False):
+        from window_controller import adb, online_devices, adb_device_port_sort_key
+        from concurrent.futures import ThreadPoolExecutor
+        import socket
+        configured = int(self.get_settings_payload("general")["emulator_port"])
+        candidates = list(dict.fromkeys([configured, 5137, 5555, 7555, 5635, 62001, 62025, 62026,
+                                        7556, 7565, 16416] + list(range(5556, 5566)) +
+                                       list(range(5565, 5756, 10)) + list(range(16384, 16415))))
+        def open_port(port):
+            try:
+                with socket.socket() as sock:
+                    sock.settimeout(0.05)
+                    return port if sock.connect_ex(("127.0.0.1", port)) == 0 else None
+            except OSError:
+                return None
+        if deep:
+            with ThreadPoolExecutor(max_workers=128) as pool:
+                candidates = [port for port in pool.map(open_port, range(1000, 65536)) if port is not None]
+        def connect(port):
+            try:
+                adb.connect(f"127.0.0.1:{port}", timeout=1)
+            except Exception:
+                pass
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            list(pool.map(connect, candidates))
+        devices = []
+        for device in sorted(online_devices(), key=adb_device_port_sort_key):
+            port = adb_device_port_sort_key(device)[0]
+            devices.append({"serial": device.serial, "port": None if port == float("inf") else port})
+        return {"ok": True, "devices": devices, "selected_port": configured, "was_deep": deep}

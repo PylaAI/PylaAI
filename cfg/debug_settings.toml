@@ -5,3 +5,4 @@ debug_view = false
 debug_view_fps = 30
 advanced_debug_visuals = false
 record_debug_preview_clips = false
+match_logging = false

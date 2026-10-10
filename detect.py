@@ -1,10 +1,13 @@
 import os
+import threading
 
 import cv2
 import numpy as np
 import onnxruntime as ort
 from utils import load_toml_as_dict
 import warnings
+
+_dml_lock = threading.Lock()
 
 warnings.filterwarnings(
     "ignore",
@@ -150,13 +153,14 @@ class Detect:
         threads_to_use = load_toml_as_dict("cfg/general_config.toml")['used_threads']
 
         def get_optimal_threads(max_limit=6):
-            threads = os.cpu_count()
-            threads_amount = min(max(2, threads // 2), max_limit)
+            threads = os.cpu_count() or 1
+            threads_amount = min(threads, max(2, threads // 2), max_limit)
             print(f"Detected {threads} CPU threads, using {threads_amount} threads.")
             return threads_amount
 
-        self.optimal_threads_amount = get_optimal_threads() if threads_to_use == "auto" else int(threads_to_use)
-        cv2.setNumThreads(self.optimal_threads_amount)
+        self.optimal_threads_amount = get_optimal_threads() if threads_to_use == "auto" else max(1, int(threads_to_use))
+        # Keep OpenCV's shared pool separate from ONNX inference threads.
+        cv2.setNumThreads(max(1, int(os.environ.get("PYLA_OPENCV_THREADS", min(self.optimal_threads_amount, 4)))))
         self.preferred_device = str(
             load_toml_as_dict("cfg/general_config.toml").get("cpu_or_gpu", "auto") or "auto"
         ).strip().lower()
@@ -172,35 +176,57 @@ class Detect:
             dtype=np.float32
         )
 
-    def load_model(self):
-        available_providers = ort.get_available_providers()
-        providers = []
-
-        if self.preferred_device in ("gpu", "auto"):
-            if "CUDAExecutionProvider" in available_providers:
-                providers.append("CUDAExecutionProvider")
-            if "DmlExecutionProvider" in available_providers:
-                providers.append("DmlExecutionProvider")
-
-        providers.append("CPUExecutionProvider")
-        if self.preferred_device == "cpu":
-            providers = ["CPUExecutionProvider"]
-
+    def _session_options(self, gpu):
         so = ort.SessionOptions()
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        so.intra_op_num_threads = self.optimal_threads_amount
-        so.inter_op_num_threads = self.optimal_threads_amount
-        model = ort.InferenceSession(self.model_path, sess_options=so, providers=providers)
+        if gpu:
+            # The GPU does the work; a large spinning CPU pool just burns cores.
+            so.intra_op_num_threads = 1
+            so.inter_op_num_threads = 1
+            so.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            so.add_session_config_entry("session.inter_op.allow_spinning", "0")
+            # Required by DirectML (no memory patterns, no parallel execution).
+            so.enable_mem_pattern = False
+            so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        else:
+            so.intra_op_num_threads = self.optimal_threads_amount
+            so.inter_op_num_threads = self.optimal_threads_amount
+        return so
 
-        used_provider = model.get_providers()[0]
-        if used_provider == "CUDAExecutionProvider":
-            print("Using CUDA GPU")
-        elif used_provider == "DmlExecutionProvider":
-            print("Using GPU")
-        elif self.preferred_device != "cpu":
-            print("Using CPU as no GPU provider found")
+    def _cpu_session(self):
+        return ort.InferenceSession(self.model_path, sess_options=self._session_options(False),
+                                    providers=["CPUExecutionProvider"])
 
-        return model, used_provider
+    def load_model(self):
+        available_providers = ort.get_available_providers()
+        onnx_provider = "CPUExecutionProvider"
+        if self.preferred_device == "gpu" or self.preferred_device == "auto":
+            for candidate in ("CUDAExecutionProvider", "DmlExecutionProvider"):
+                if candidate in available_providers:
+                    onnx_provider = candidate
+                    break
+            else:
+                print("Using CPU as no GPU provider found")
+
+        if onnx_provider == "CPUExecutionProvider":
+            return self._cpu_session(), onnx_provider
+
+        try:
+            model = ort.InferenceSession(self.model_path, sess_options=self._session_options(True),
+                                         providers=[onnx_provider, "CPUExecutionProvider"])
+        except Exception as e:
+            print(f"Failed to initialize GPU provider {onnx_provider}: {e}. Falling back to CPU.")
+            return self._cpu_session(), "CPUExecutionProvider"
+
+        # get_available_providers() only lists what the wheel was built with;
+        # the session reports what was actually registered.
+        active = model.get_providers()[0]
+        if active != onnx_provider:
+            print(f"{onnx_provider} was not usable on this machine, running on CPU instead.")
+            return self._cpu_session(), "CPUExecutionProvider"
+
+        print(f"Using GPU ({'CUDA' if active == 'CUDAExecutionProvider' else 'DirectML'})")
+        return model, active
 
     def preprocess_image(self, img):
         h, w = img.shape[:2]
@@ -254,10 +280,30 @@ class Detect:
 
         preprocessed_img, resized_w, resized_h = self.preprocess_image(img)
 
-        outputs = self.model.run(
-            None,
-            {self.input_name: preprocessed_img}
-        )
+        try:
+            if self.device == "DmlExecutionProvider":
+                with _dml_lock:
+                    outputs = self.model.run(
+                        None,
+                        {self.input_name: preprocessed_img}
+                    )
+            else:
+                outputs = self.model.run(
+                    None,
+                    {self.input_name: preprocessed_img}
+                )
+        except Exception as e:
+            if self.device != "CPUExecutionProvider":
+                print(f"ONNX Runtime inference failed on {self.device}: {e}. Re-initializing model on CPU...")
+                self.device = "CPUExecutionProvider"
+                self.model = self._cpu_session()
+                self.input_name = self.model.get_inputs()[0].name
+                outputs = self.model.run(
+                    None,
+                    {self.input_name: preprocessed_img}
+                )
+            else:
+                raise e
 
         detections = self.postprocess(
             outputs,

@@ -4,7 +4,7 @@ import cv2
 
 from state_finder import get_state, is_underdog
 from trophy_observer import TrophyObserver, MatchResult
-from utils import find_template_center, load_toml_as_dict, notify_user, save_brawler_data
+from utils import sleep_ui, find_template_center, load_toml_as_dict, notify_user, save_brawler_data
 
 def load_image(image_path, scale_factor):
     image = cv2.imread(image_path)
@@ -156,7 +156,7 @@ class StageManager:
         self.window_controller.release_movement()
         self.window_controller.press("proceed")
         print("Pressed to start a match")
-        time.sleep(2)
+        sleep_ui(2)
 
     def click_star_drop(self, drop_type="regular"):
         if hasattr(self, '_star_drop_thread') and self._star_drop_thread.is_alive():
@@ -168,7 +168,7 @@ class StageManager:
             else:
                 for _ in range(8):
                     self.window_controller.press("proceed", 0.05)
-                    time.sleep(0.1)
+                    sleep_ui(0.1)
 
         import threading
         self._star_drop_thread = threading.Thread(target=_handle_drop, daemon=True)
@@ -212,7 +212,7 @@ class StageManager:
                 print("Game has ended, proceeding")
                 self.window_controller.press("proceed")
 
-            time.sleep(3)
+            sleep_ui(3)
             screenshot = self.window_controller.screenshot()
             current_state = get_state(screenshot)
 
@@ -238,7 +238,7 @@ class StageManager:
                 return
             print("Match did not start within 25s, restarting the game.")
             self.window_controller.restart_brawl_stars()
-            time.sleep(2)
+            sleep_ui(2)
         elif time.time() - end_screen_time > 35:
             print("End screen timeout reached, restarting the game.")
             self.window_controller.restart_brawl_stars()
@@ -246,7 +246,7 @@ class StageManager:
 
     def quit_shop(self):
         self.window_controller.click(100 * self.window_controller.width_ratio, 60 * self.window_controller.height_ratio)
-        time.sleep(1)
+        sleep_ui(1)
 
     def close_pop_up(self):
         screenshot = self.window_controller.screenshot()

@@ -210,6 +210,8 @@ class TrophyObserver:
 
             if place < 2:
                 result = MatchResult.VICTORY
+            elif place == 2 and gamemode == GameMode.TRIO_SHOWDOWN:
+                result = MatchResult.DRAW
             elif place == 2:
                 if self.current_trophies is not None:
                     try:

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import os
 
+from match_logger import MatchLogger
 from detect import Detect
 from state_finder import get_state
 from utils import load_toml_as_dict, count_hsv_pixels, load_brawlers_info, interpret_pyla_code, \
@@ -49,6 +50,8 @@ class Play:
         self.is_hypercharge_ready = False
         self.time_since_super_checked = time.time()
         self.is_super_ready = False
+        self.match_logger = MatchLogger()
+        window_controller.match_logger = self.match_logger
         self.window_controller = window_controller
         self.TILE_SIZE = bot_config.get("perceived_tile_size", 54)
         self.centered_wall_detection = config_bool(bot_config.get("centered_wall_detection"), False)
@@ -752,6 +755,9 @@ class Play:
     def main(self, frame, brawler, main):
         current_time = time.time()
         state = main.get_latest_state()
+        if state == "match" and self.match_logger.enabled and not self.match_logger.active:
+            self.match_logger.start({"brawler": brawler, "resolution": list(frame.shape[:2]),
+                                     "playstyle": main.Stage_manager.playstyle_info})
         data = self.get_main_data(frame)
         if current_time - self.time_since_walls_checked > self.walls_treshold:
             tile_data = self.get_tile_data(frame, data.get("player"))
@@ -765,6 +771,7 @@ class Play:
             data['wall'] = self.last_walls_data
             data['bush'] = self.last_bushes_data
 
+        self.match_logger.log_frame(t=time.perf_counter(), state=main.get_latest_state(), detections=data)
         data = self.validate_game_data(data)
         self.track_no_detections(data)
         if data:
@@ -799,6 +806,9 @@ class Play:
             self.time_since_super_checked = current_time
         self.frame = frame
         movement = self.loop(brawler, data, current_time)
+        self.match_logger.log("decision", t=time.perf_counter(), movement=movement,
+                              super_ready=self.is_super_ready, gadget_ready=self.is_gadget_ready,
+                              hypercharge_ready=self.is_hypercharge_ready)
         self.publish_debug_view(frame, data, state, movement)
         if movement is not None:
             self.do_movement(movement)

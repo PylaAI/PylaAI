@@ -78,7 +78,7 @@ def discover_device(verbose: bool = False) -> AdbDevice:
                     pass
 
                 devices = online_devices()
-                pref = next((d for d in devices if d.serial.endswith(f"{port_str}")), None)
+                pref = next((d for d in devices if adb_device_port_sort_key(d)[0] == port_num), None)
                 if pref:
                     if verbose:
                         print(f"Successfully connected to configured preferred port: {pref.serial}")
@@ -116,6 +116,8 @@ def discover_device(verbose: bool = False) -> AdbDevice:
     return chosen
 
 class WindowController:
+    match_logger = None
+
     def __init__(self, max_fps="auto"):
         self.scale_factor = None
         self.width = None
@@ -309,37 +311,52 @@ class WindowController:
         self.scale_factor = min(self.width_ratio, self.height_ratio)
 
     def touch_down(self, x, y, pointer_id=0):
+        started = time.perf_counter()
         try:
-            self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_DOWN, pointer_id)
-        except Exception as e:
-            print(f"Error during touch_down at ({x}, {y}) with pointer_id {pointer_id}: {e}")
-            if self.reconnect_scrcpy() :
-                try:
-                    self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_DOWN, pointer_id)
-                except Exception as e2:
-                    print(f"Retry after reconnect failed during touch_down at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+            try:
+                self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_DOWN, pointer_id)
+            except Exception as e:
+                print(f"Error during touch_down at ({x}, {y}) with pointer_id {pointer_id}: {e}")
+                if self.reconnect_scrcpy() :
+                    try:
+                        self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_DOWN, pointer_id)
+                    except Exception as e2:
+                        print(f"Retry after reconnect failed during touch_down at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+        finally:
+            if self.match_logger is not None:
+                self.match_logger.log_touch("down", x, y, pointer_id, started, time.perf_counter())
 
     def touch_move(self, x, y, pointer_id=0):
+        started = time.perf_counter()
         try:
-            self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_MOVE, pointer_id)
-        except Exception as e:
-            print(f"Error during touch_move at ({x}, {y}) with pointer_id {pointer_id}: {e}")
-            if self.reconnect_scrcpy():
-                try:
-                    self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_MOVE, pointer_id)
-                except Exception as e2:
-                    print(f"Retry after reconnect failed during touch_move at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+            try:
+                self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_MOVE, pointer_id)
+            except Exception as e:
+                print(f"Error during touch_move at ({x}, {y}) with pointer_id {pointer_id}: {e}")
+                if self.reconnect_scrcpy():
+                    try:
+                        self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_MOVE, pointer_id)
+                    except Exception as e2:
+                        print(f"Retry after reconnect failed during touch_move at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+        finally:
+            if self.match_logger is not None:
+                self.match_logger.log_touch("move", x, y, pointer_id, started, time.perf_counter())
 
     def touch_up(self, x, y, pointer_id=0):
+        started = time.perf_counter()
         try:
-            self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_UP, pointer_id)
-        except Exception as e:
-            print(f"Error during touch_up at ({x}, {y}) with pointer_id {pointer_id}: {e}")
-            if self.reconnect_scrcpy():
-                try:
-                    self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_UP, pointer_id)
-                except Exception as e2:
-                    print(f"Retry after reconnect failed during touch_up at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+            try:
+                self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_UP, pointer_id)
+            except Exception as e:
+                print(f"Error during touch_up at ({x}, {y}) with pointer_id {pointer_id}: {e}")
+                if self.reconnect_scrcpy():
+                    try:
+                        self.scrcpy_client.control.touch(int(x), int(y), scrcpy.ACTION_UP, pointer_id)
+                    except Exception as e2:
+                        print(f"Retry after reconnect failed during touch_up at ({x}, {y}) with pointer_id {pointer_id}: {e2}")
+        finally:
+            if self.match_logger is not None:
+                self.match_logger.log_touch("up", x, y, pointer_id, started, time.perf_counter())
 
     def move(self, x, y):
         if not self.are_we_moving:
@@ -375,7 +392,13 @@ class WindowController:
         if not already_include_ratio:
             x = x * self.width_ratio
             y = y * self.height_ratio
-        if touch_down: self.touch_down(x, y, pointer_id=self.PID_ATTACK)
+        if touch_down:
+            x = max(0, min(self.width - 1, int(x + random.randint(-10, 10) * self.width_ratio)))
+            y = max(0, min(self.height - 1, int(y + random.randint(-10, 10) * self.height_ratio)))
+            self._click_position = (x, y)
+            self.touch_down(x, y, pointer_id=self.PID_ATTACK)
+        elif touch_up:
+            x, y = getattr(self, "_click_position", (x, y))
         time.sleep(delay)
         if touch_up: self.touch_up(x, y, pointer_id=self.PID_ATTACK)
 
@@ -426,6 +449,8 @@ class WindowController:
         self.touch_up(int(end_x), int(end_y), pointer_id=self.PID_ATTACK)
 
     def close(self):
+        if self.match_logger is not None:
+            self.match_logger.shutdown()
         try:
             self.debug_view.close()
         except Exception as exc:
