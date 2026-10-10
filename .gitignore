@@ -39,3 +39,6 @@ pyla-v0.9.9.zip
 pyla_clip_recorder.exe
 tests/test_clip_buffering.py
 tests/test_scrcpy_protocol.py
+/match_logs
+tests/test_touch_randomness.py
+docs/ideas_from_game_code.md
