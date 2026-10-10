@@ -34,6 +34,24 @@ const GAMEMODE_LOGOS = new Set([
 ]);
 
 const INVALID_PLAYER_TAG_MESSAGE = "Player tag is incorrect. Use your Brawl Stars player tag, not your Supercell ID.";
+const TIP_ROTATION_MS = 30000;
+const PYLA_TIPS = [
+    { id: "discord-control", title: "Control Pyla from Discord", text: "Set up your Discord bot in Settings → Webhook to use /start, /stop, /pause and /screenshot remotely. Restart Pyla after adding the bot token.", view: "settings", setting: "discord_bot_token" },
+    { id: "brawler-queue", title: "Let the queue do the switching", text: "Add several brawlers to the queue and enable Auto Pick. Pyla switches to the next one when each target is reached.", view: "queue" },
+    { id: "threads", title: "Use less CPU", text: "Change Threads from auto to 1 in Settings to reduce CPU usage. Processing FPS may drop. Restart Pyla to apply the change.", view: "settings", setting: "used_threads" },
+    { id: "low-fps", title: "Running below 5 FPS?", text: "Try raising any timers below 0.4 seconds to 0.4 in Settings → Timers. Less frequent checks can help on slower PCs.", view: "settings", setting: "wall_detection" },
+    { id: "debug-view", title: "See what Pyla sees", text: "Enable Debug View in Settings to watch the frames Pyla is processing. It helps when you're figuring out why the bot is stuck or missing something.", view: "settings", setting: "debug_view" },
+    { id: "webhook", title: "Get updates without watching", text: "Add a Webhook URL in Settings → Webhook, then choose notifications for stuck runs, completed targets, or every few matches or minutes.", view: "settings", setting: "webhook_url" },
+    { id: "unsupported-modes", title: "Pick a supported mode", text: "Solo Showdown and Duels aren't supported. Check your playstyle's gamemodes before starting a run.", view: "playstyles" },
+    { id: "game-language", title: "Keep Brawl Stars in English", text: "Set Brawl Stars' language to English so Pyla can read the game correctly. You can still use any language for Pyla's interface." },
+    { id: "mumu", title: "Try MuMu for better performance", text: "MuMu usually gives the best performance with Pyla. If your current emulator feels slow, it's worth trying." },
+    { id: "ldplayer-gas", title: "Walking into the gas on LDPlayer?", text: "Try switching to MuMu if Pyla keeps moving into Showdown gas on LDPlayer." },
+    { id: "boost-premium", audience: "free", title: "Get Premium with a server boost", text: "You can get free Premium by boosting the official Discord while the server is below Level 3. Check the Discord for details.", link: "discord" },
+    { id: "premium-discord", audience: "free", title: "Edit your queue from Discord", text: "Premium adds /add_to_queue, /remove_from_queue and /clear_queue, so you can change your queue remotely while Pyla is stopped.", link: "premium" },
+    { id: "premium-instances", audience: "free", title: "Run more than one account", text: "Premium lets you run multiple emulator instances at once, each with its own Pyla profile and queue.", link: "premium" },
+    { id: "premium-aiming", audience: "free", title: "Try predictive aiming", text: "Premium unlocks Aimbot playstyles, which lead moving targets instead of relying only on auto-aim.", link: "premium" },
+    { id: "premium-api", audience: "free", title: "Sync your Brawl Stars stats", text: "With Premium, add your Player Tag to sync trophies and win streaks through the Brawl Stars API, and use Push All to queue brawlers below your target.", link: "premium" },
+];
 const BRAWLER_RARITIES = {
     "Common": { order: 1, color: "#b8bec9" },
     "Rare": { order: 2, color: "#58d65c" },
@@ -105,6 +123,10 @@ const state = {
     forceScrollLogs: false,
     adbDevices: null,
     scanningAdb: false,
+    tips: [],
+    tipIndex: 0,
+    tipsTimer: null,
+    tipsBound: false,
 };
 
 function renderSyncButton() { return ""; }
@@ -369,6 +391,7 @@ function setView(view) {
 }
 
 function renderAll() {
+    initializeTips();
     renderAlerts();
     renderDashboard();
     renderQueue();
@@ -3546,4 +3569,83 @@ function openPublicDevicePicker() {
     buttons[0].addEventListener("click", () => scan(false));
     buttons[1].addEventListener("click", () => scan(true));
     scan(false);
+}
+
+function initializeTips() {
+    const band = document.getElementById("tipsBand");
+    if (!band) return;
+    if (!state.tips.length) {
+        state.tips = PYLA_TIPS.filter(tip => !tip.audience || tip.audience === "free");
+        const lastTip = getStorageItem("pylaLastTip", "");
+        const choices = state.tips.map((tip, index) => ({ tip, index })).filter(({ tip }) => tip.id !== lastTip);
+        state.tipIndex = choices[Math.floor(Math.random() * choices.length)]?.index || 0;
+        renderTip();
+    }
+    band.classList.remove("hidden");
+    if (!state.tipsBound) {
+        state.tipsBound = true;
+        document.getElementById("previousTipBtn")?.addEventListener("click", () => changeTip(-1, true));
+        document.getElementById("nextTipBtn")?.addEventListener("click", () => changeTip(1, true));
+        band.addEventListener("mouseenter", stopTipsRotation);
+        band.addEventListener("mouseleave", scheduleTipsRotation);
+        band.addEventListener("focusin", stopTipsRotation);
+        band.addEventListener("focusout", () => {
+            // Wait for focus to reach its next element before deciding whether to rotate.
+            requestAnimationFrame(scheduleTipsRotation);
+        });
+        band.addEventListener("keydown", (event) => {
+            if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+            event.preventDefault();
+            changeTip(event.key === "ArrowLeft" ? -1 : 1, true);
+        });
+        document.addEventListener("visibilitychange", scheduleTipsRotation);
+    }
+    scheduleTipsRotation();
+}
+
+function stopTipsRotation() {
+    clearTimeout(state.tipsTimer);
+    state.tipsTimer = null;
+}
+
+function scheduleTipsRotation() {
+    stopTipsRotation();
+    const band = document.getElementById("tipsBand");
+    if (!band || document.hidden || band.matches(":hover") || band.contains(document.activeElement)) return;
+    state.tipsTimer = setTimeout(() => changeTip(1), TIP_ROTATION_MS);
+}
+
+function changeTip(direction, manual = false) {
+    if (!state.tips.length) return;
+    state.tipIndex = (state.tipIndex + direction + state.tips.length) % state.tips.length;
+    renderTip(manual);
+    scheduleTipsRotation();
+}
+
+function renderTip(manual = false) {
+    const tip = state.tips[state.tipIndex];
+    const content = document.getElementById("tipContent");
+    if (!tip || !content) return;
+    content.setAttribute("aria-live", manual ? "polite" : "off");
+    const viewLabels = { settings: "Open Settings", queue: "Open Brawlers", playstyles: "Browse Playstyles", dashboard: "Open Dashboard" };
+    const linkUrl = tip.link === "discord"
+        ? safeExternalUrl(state.bootstrap.links?.discord?.url)
+        : tip.link === "premium" ? "https://pyla-ai.angelfirela.dev/premium" : "";
+    const action = tip.view
+        ? `<button id="tipActionBtn" class="tips-link" type="button">${escapeHtml(viewLabels[tip.view])}<span aria-hidden="true">→</span></button>`
+        : linkUrl ? `<a class="tips-link" href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer">${tip.link === "discord" ? "Open Discord" : "Learn about Premium"}<span aria-hidden="true">↗</span></a>` : "";
+    content.innerHTML = `<strong class="tips-title">${escapeHtml(tip.title)}</strong><p class="tips-text">${escapeHtml(tip.text)}</p>${action}`;
+    document.getElementById("tipCounter").textContent = `${state.tipIndex + 1} / ${state.tips.length}`;
+    setStorageItem("pylaLastTip", tip.id);
+    document.getElementById("tipActionBtn")?.addEventListener("click", () => {
+        if (tip.view === "settings") {
+            state.settingsSearch = "";
+            renderSettings();
+        }
+        setView(tip.view);
+        const target = tip.setting
+            ? document.querySelector(`#view-settings [data-setting-key="${tip.setting}"]`)?.closest(".setting-row, .timer-box")
+            : null;
+        target?.scrollIntoView({ block: "center" });
+    });
 }

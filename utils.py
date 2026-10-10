@@ -332,7 +332,7 @@ def save_brawler_icon(brawler_name):
     print(f"Icon not found for brawler '{brawler_name}'")
 
 
-PYLA_VERSION = "0.8.15"
+PYLA_VERSION = "0.8.17"
 DOWNLOAD_URL = "https://pyla-ai.angelfirela.dev/download"
 
 

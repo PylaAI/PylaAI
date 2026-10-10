@@ -59,6 +59,22 @@
                 </div>
             </header>
             <div id="alertStack" class="alerts-container"></div>
+            <aside id="tipsBand" class="tips-band hidden" aria-label="Pyla tips" aria-roledescription="carousel">
+                <span class="tips-label">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.5 14.5a6 6 0 1 1 7 0c-1 .7-1.5 1.5-1.5 2.5h-4c0-1-.5-1.8-1.5-2.5Z"/></svg>
+                    <span>Tips</span>
+                </span>
+                <div id="tipContent" class="tips-content" aria-live="off" aria-atomic="true"></div>
+                <div class="tips-controls">
+                    <button id="previousTipBtn" class="tips-arrow" type="button" aria-label="Previous tip" aria-controls="tipContent">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+                    </button>
+                    <span id="tipCounter" class="tips-counter" data-i18n-skip></span>
+                    <button id="nextTipBtn" class="tips-arrow" type="button" aria-label="Next tip" aria-controls="tipContent">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
+                    </button>
+                </div>
+            </aside>
             <div class="views-scroll-shell">
                 <div id="viewsWrapper" class="views-wrapper">
                     <section id="view-dashboard" class="view active"></section>
