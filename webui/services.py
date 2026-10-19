@@ -624,6 +624,12 @@ class WebDataService:
             return self.get_settings_payload("debug")
         if section == "webhook":
             config = self._load_config("cfg/webhook_config.toml")
+            # Empty secrets are ignored by _apply_updates, so the UI's clear button lists them explicitly.
+            clear_secrets = payload.get("_clear_secrets")
+            if isinstance(clear_secrets, list):
+                for key in self.SECRET_WEBHOOK_FIELDS:
+                    if key in clear_secrets:
+                        config[key] = ""
             self._save_config("cfg/webhook_config.toml", self._apply_updates(config, self.WEBHOOK_FIELDS, payload))
             return self.get_settings_payload("webhook")
         raise KeyError(f"Unknown settings section: {section}")
