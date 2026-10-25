@@ -210,7 +210,6 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             return [
                 folder_path + 'mainInGameModel.onnx',
                 folder_path + 'tileDetector.onnx',
-                folder_path + 'closeTileDetector.onnx',
             ]
 
         def restart_brawl_stars(self):

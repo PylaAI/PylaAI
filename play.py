@@ -22,7 +22,7 @@ PLAYER_HIT_CIRCLE_RADIUS = 53
 
 class Play:
 
-    def __init__(self, main_info_model, tile_detector_model, close_tile_detector_model, window_controller, pyla_code):
+    def __init__(self, main_info_model, tile_detector_model, window_controller, pyla_code):
         bot_config = load_toml_as_dict("cfg/bot_config.toml")
         time_config = load_toml_as_dict("cfg/time_tresholds.toml")
         self.fix_movement_keys = {
@@ -42,6 +42,9 @@ class Play:
         self.walls_treshold = time_config["wall_detection"]
         self.last_walls_data = []
         self.last_bushes_data = []
+        self.last_water_data = []
+        self.last_rope_fence_data = []
+        self.last_movement_obstacles = []
         self.keys_hold = []
         self.time_since_different_movement = time.time()
         self.time_since_gadget_checked = time.time()
@@ -54,8 +57,6 @@ class Play:
         window_controller.match_logger = self.match_logger
         self.window_controller = window_controller
         self.TILE_SIZE = bot_config.get("perceived_tile_size", 54)
-        self.centered_wall_detection = config_bool(bot_config.get("centered_wall_detection"), False)
-        self.centered_wall_crop_size = 640
 
         bot_config = load_toml_as_dict("cfg/bot_config.toml")
         time_config = load_toml_as_dict("cfg/time_tresholds.toml")
@@ -65,14 +66,10 @@ class Play:
                 os.makedirs("debug_frames")
         self.Detect_main_info = Detect(main_info_model, classes=['enemy', 'teammate', 'player'])
         self.tile_detector_model_classes = bot_config["wall_model_classes"]
-        self.Detect_tile_detector = None if self.centered_wall_detection else Detect(
+        self.Detect_tile_detector =Detect(
             tile_detector_model,
             classes=self.tile_detector_model_classes
         )
-        self.Detect_centered_tile_detector = Detect(
-            close_tile_detector_model,
-            classes=self.tile_detector_model_classes
-        ) if self.centered_wall_detection else None
 
         self.time_since_walls_checked = 0
         self.time_since_player_last_found = time.time()
@@ -475,7 +472,8 @@ class Play:
             return False
 
         new_pos = (hit_circle_center[0] + dx, hit_circle_center[1] + dy)
-        return self.walls_block_swept_circle(hit_circle_center, new_pos, hit_circle_radius, walls)
+        obstacles = list(walls or []) + self.last_movement_obstacles
+        return self.walls_block_swept_circle(hit_circle_center, new_pos, hit_circle_radius, obstacles)
 
     @staticmethod
     def validate_game_data(data):
@@ -652,22 +650,6 @@ class Play:
             return True
         return False
 
-    def get_centered_wall_crop(self, frame, player_data=None):
-        frame_height, frame_width = frame.shape[:2]
-        crop_size = self.centered_wall_crop_size
-
-        if player_data:
-            center_x, center_y = self.get_entity_pos(player_data[0])
-        else:
-            center_x, center_y = frame_width / 2, frame_height / 2
-
-        crop_x1 = int(clamp(round(center_x - crop_size / 2), 0, frame_width - crop_size))
-        crop_y1 = int(clamp(round(center_y - crop_size / 2), 0, frame_height - crop_size))
-        crop_x2 = crop_x1 + crop_size
-        crop_y2 = crop_y1 + crop_size
-
-        return frame[crop_y1:crop_y2, crop_x1:crop_x2], crop_x1, crop_y1
-
     @staticmethod
     def offset_tile_data(tile_data, offset_x, offset_y):
         if not offset_x and not offset_y:
@@ -682,26 +664,32 @@ class Play:
         return offset_data
 
     def get_tile_data(self, frame, player_data=None):
-        if self.centered_wall_detection and self.Detect_centered_tile_detector is not None:
-            crop, offset_x, offset_y = self.get_centered_wall_crop(frame, player_data)
-            tile_data = self.Detect_centered_tile_detector.detect_objects(
-                crop,
-                conf_tresh=self.wall_detection_confidence
-            )
-            return self.offset_tile_data(tile_data, offset_x, offset_y)
-
+        tile_size = self.TILE_SIZE * (self.window_controller.scale_factor or 1)
+        self.Detect_tile_detector.tile_size = tile_size
         tile_data = self.Detect_tile_detector.detect_objects(frame, conf_tresh=self.wall_detection_confidence)
         return tile_data
 
     def process_tile_data(self, tile_data):
         walls = []
         bushes = []
+        water = []
+        rope_fences = []
+        self.last_movement_obstacles = (tile_data.get('rope_fence', []) + tile_data.get('water', [])
+                                        + tile_data.get('out_of_bounds', []))
         for class_name, boxes in tile_data.items():
-            if 'bush' not in class_name:
-                walls.extend(boxes)
-            else:
+            if class_name == 'out_of_bounds':
+                continue
+            if 'bush' in class_name:
                 bushes.extend(boxes)
-        return walls, bushes
+            elif 'water' in class_name:
+                water.extend(boxes)
+            elif 'fence' in class_name:
+                rope_fences.extend(boxes)
+            else:
+                walls.extend(boxes)
+        self.last_water_data = water
+        self.last_rope_fence_data = rope_fences
+        return walls, bushes, water, rope_fences
 
     def get_movement(self):
         movement, updated_globals = interpret_pyla_code(self.pyla_code, self.context)
@@ -719,6 +707,8 @@ class Play:
             "enemy": [],
             "teammate": [],
             "wall": [],
+            "bush": [],
+            "water": [],
             "attack_range": 0,
             "super_range": 0,
             "poison_gas": {},
@@ -733,7 +723,7 @@ class Play:
         }
 
         if data:
-            for key in ["player", "enemy", "teammate", "wall"]:
+            for key in ["player", "enemy", "teammate", "wall", "bush", "water"]:
                 debug_data[key] = [[int(v) for v in box[:4]] for box in (data.get(key) or []) if len(box) >= 4]
             try:
                 _, attack_range, super_range = self.get_brawler_range(self.current_brawler)
@@ -761,15 +751,19 @@ class Play:
         data = self.get_main_data(frame)
         if current_time - self.time_since_walls_checked > self.walls_treshold:
             tile_data = self.get_tile_data(frame, data.get("player"))
-            walls, bushes = self.process_tile_data(tile_data)
+            walls, bushes, water, rope_fence = self.process_tile_data(tile_data)
             self.time_since_walls_checked = current_time
             self.last_walls_data = walls
             data['wall'] = walls
             self.last_bushes_data = bushes
             data['bush'] = bushes
+            data['water'] = water
+            data['rope_fence'] = rope_fence
         else:
             data['wall'] = self.last_walls_data
             data['bush'] = self.last_bushes_data
+            data['water'] = self.last_water_data
+            data['rope_fence'] = self.last_rope_fence_data
 
         self.match_logger.log_frame(t=time.perf_counter(), state=main.get_latest_state(), detections=data)
         data = self.validate_game_data(data)

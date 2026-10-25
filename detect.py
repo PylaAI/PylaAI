@@ -1,3 +1,5 @@
+import ast
+import json
 import os
 import threading
 
@@ -8,6 +10,10 @@ from utils import load_toml_as_dict
 import warnings
 
 _dml_lock = threading.Lock()
+
+_TERRAIN_TILE_CLASSES = ['wall', 'bush', 'rope_fence', 'water', 'out_of_bounds']
+_SEMANTIC_TILE_NAMES = dict(wall='wall', indestructible_wall='wall', fragile='wall',
+                          bush='bush', rope_fence='rope_fence', water='water', out_of_bounds='out_of_bounds')
 
 warnings.filterwarnings(
     "ignore",
@@ -51,7 +57,7 @@ def _numpy_nms(boxes, scores, iou_threshold=0.6):
     return np.array(keep, dtype=np.int32)
 
 
-def _normalize_yolo_output(raw_output):
+def _normalize_yolo_output(raw_output, end2end=False):
     """
     Accepts either:
         outputs
@@ -62,6 +68,7 @@ def _normalize_yolo_output(raw_output):
         (1, 8400, 84)
         (84, 8400)
         (8400, 84)
+        (1, 300, 6) for end-to-end models
 
     Returns:
         prediction with shape (num_boxes, num_channels)
@@ -81,14 +88,18 @@ def _normalize_yolo_output(raw_output):
         raise ValueError(f"Unexpected YOLO output shape: {prediction.shape}")
 
     # YOLOv8 ONNX often gives (84, 8400), needs transpose to (8400, 84)
-    if prediction.shape[0] < prediction.shape[1] and prediction.shape[0] <= 256:
+    if not end2end and prediction.shape[0] < prediction.shape[1] and prediction.shape[0] <= 256:
         prediction = prediction.T
 
     return prediction
 
 
-def _postprocess_raw(raw_output, conf_tresh=0.6, iou_thresh=0.6):
-    prediction = _normalize_yolo_output(raw_output)
+def _postprocess_raw(raw_output, conf_tresh=0.6, iou_thresh=0.6, end2end=False):
+    prediction = _normalize_yolo_output(raw_output, end2end=end2end)
+
+    if end2end:
+        # YOLO26 returns [x1, y1, x2, y2, confidence, class_id]; no extra NMS is needed.
+        return [prediction[prediction[:, 4] >= conf_tresh].copy()]
 
     n_detections = prediction.shape[0]
     n_classes = prediction.shape[1] - 4
@@ -149,7 +160,7 @@ def _postprocess_raw(raw_output, conf_tresh=0.6, iou_thresh=0.6):
 
 
 class Detect:
-    def __init__(self, model_path, ignore_classes=None, classes=None, input_size=(640, 640)):
+    def __init__(self, model_path, ignore_classes=None, classes=None, input_size=(640, 640), tile_size=54):
         threads_to_use = load_toml_as_dict("cfg/general_config.toml")['used_threads']
 
         def get_optimal_threads(max_limit=6):
@@ -168,8 +179,24 @@ class Detect:
         self.classes = classes
         self.ignore_classes = set(ignore_classes) if ignore_classes else set()
         self.input_size = input_size
+        self.tile_size = max(1.0, float(tile_size))
         self.model, self.device = self.load_model()
         self.input_name = self.model.get_inputs()[0].name
+        metadata = self.model.get_modelmeta().custom_metadata_map
+        self.end2end = metadata.get("end2end", "False").lower() == "true"
+        self.semantic_outputs = {output.name: i for i, output in enumerate(self.model.get_outputs())}
+        self.semantic = {'class_ids', 'confidence'}.issubset(self.semantic_outputs)
+        if self.semantic:
+            with open(os.path.splitext(model_path)[0] + '.json', encoding='utf-8') as file:
+                manifest = json.load(file)
+            self.semantic_names = [manifest['class_ids'][str(i)] for i in range(len(manifest['class_ids']))]
+            self.input_size = (manifest['height'], manifest['width'])
+            if self.model.get_inputs()[0].shape != [1, 3, *self.input_size]:
+                raise ValueError('Semantic model input size does not match its JSON manifest.')
+            self.classes = list(_TERRAIN_TILE_CLASSES)
+        if self.end2end and "names" in metadata:
+            names = ast.literal_eval(metadata["names"])
+            self.classes = [names[i] for i in range(len(names))]
         self._padded_img_buffer = np.full(
             (1, 3, self.input_size[0], self.input_size[1]),
             128.0 / 255.0,
@@ -234,6 +261,12 @@ class Detect:
         scale = min(self.input_size[0] / h, self.input_size[1] / w)
         new_w = int(w * scale)
         new_h = int(h * scale)
+        pad_x = pad_y = 0
+        if self.end2end or self.semantic:
+            new_w, new_h = round(w * scale), round(h * scale)
+            pad_x = (self.input_size[1] - new_w) // 2
+            pad_y = (self.input_size[0] - new_h) // 2
+            self._padded_img_buffer.fill(114.0 / 255.0)
 
         resized_img = cv2.resize(
             img,
@@ -244,17 +277,21 @@ class Detect:
         img_float = resized_img.astype(np.float32, copy=True)
         np.multiply(img_float, 1.0 / 255.0, out=img_float)
 
-        self._padded_img_buffer[0, 0, :new_h, :new_w] = img_float[:, :, 0]
-        self._padded_img_buffer[0, 1, :new_h, :new_w] = img_float[:, :, 1]
-        self._padded_img_buffer[0, 2, :new_h, :new_w] = img_float[:, :, 2]
+        self._padded_img_buffer[0, 0, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 0]
+        self._padded_img_buffer[0, 1, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 1]
+        self._padded_img_buffer[0, 2, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 2]
 
         return self._padded_img_buffer, new_w, new_h
 
     def postprocess(self, raw_output, orig_img_shape, resized_shape, conf_tresh=0.6):
+        if self.semantic:
+            return self._semantic_tile_detections(raw_output, orig_img_shape, resized_shape, conf_tresh)
+
         detections = _postprocess_raw(
             raw_output,
             conf_tresh=conf_tresh,
-            iou_thresh=0.6
+            iou_thresh=0.6,
+            end2end=self.end2end
         )
 
         orig_h, orig_w = orig_img_shape
@@ -267,13 +304,67 @@ class Detect:
 
         for det in detections:
             if len(det):
+                if self.end2end:
+                    det[:, [0, 2]] -= (self.input_size[1] - resized_w) // 2
+                    det[:, [1, 3]] -= (self.input_size[0] - resized_h) // 2
                 det[:, 0] *= scale_w
                 det[:, 1] *= scale_h
                 det[:, 2] *= scale_w
                 det[:, 3] *= scale_h
+                if self.end2end:
+                    det[:, [0, 2]] = np.clip(det[:, [0, 2]], 0, orig_w)
+                    det[:, [1, 3]] = np.clip(det[:, [1, 3]], 0, orig_h)
                 results.append(det)
 
         return results
+
+    def _semantic_tile_detections(self, raw_output, orig_img_shape, resized_shape, conf_tresh):
+        """Convert transient semantic predictions to coarse boxes; gameplay only receives ordinary lists."""
+        orig_h, orig_w = orig_img_shape
+        new_w, new_h = resized_shape
+        pad_x = (self.input_size[1] - new_w) // 2
+        pad_y = (self.input_size[0] - new_h) // 2
+        crop = (0, slice(pad_y, pad_y + new_h), slice(pad_x, pad_x + new_w))
+        ids = raw_output[self.semantic_outputs['class_ids']][crop]
+        confidence = raw_output[self.semantic_outputs['confidence']][crop]
+        scale_x, scale_y = orig_w / new_w, orig_h / new_h
+        step_x = max(1, int(self.tile_size / scale_x))
+        step_y = max(1, int(self.tile_size / scale_y))
+        rows = []
+
+        for class_id, name in enumerate(self.semantic_names):
+            tile_name = _SEMANTIC_TILE_NAMES.get(name)
+            if tile_name is None:
+                continue
+            minimum = 0.0 if name == 'out_of_bounds' else max(
+                conf_tresh, {'rope_fence': .65, 'water': .75}.get(name, .60))
+            region = np.ascontiguousarray((ids == class_id) & (confidence >= minimum), dtype=np.uint8)
+            if not region.any():
+                continue
+            if name != 'out_of_bounds':
+                # Same small/weak-component rejection as the deployed semantic model.
+                n, labels, stats, _ = cv2.connectedComponentsWithStats(region, connectivity=8)
+                area = stats[:, cv2.CC_STAT_AREA]
+                mean = np.bincount(labels.ravel(), weights=confidence.ravel(), minlength=n) / np.maximum(area, 1)
+                keep = (area >= .0006 * new_w * new_h) & (mean >= .80)
+                keep[0] = False
+                region = keep[labels].astype(np.uint8)
+
+            x0, y0, width, height = cv2.boundingRect(region)
+            output_id = self.classes.index(tile_name)
+            # Each occupied cell produces one bounded rectangle, rather than one box around an entire lake/wall.
+            for y in range(y0 // step_y * step_y, y0 + height, step_y):
+                for x in range(x0 // step_x * step_x, x0 + width, step_x):
+                    cell = region[y:y + step_y, x:x + step_x]
+                    bx, by, bw, bh = cv2.boundingRect(cell)
+                    if not bw or not bh:
+                        continue
+                    score = float(confidence[y:y + step_y, x:x + step_x][cell > 0].mean())
+                    rows.append([int((x + bx) * scale_x), int((y + by) * scale_y),
+                                 min(orig_w, int(np.ceil((x + bx + bw) * scale_x))),
+                                 min(orig_h, int(np.ceil((y + by + bh) * scale_y))), score, output_id])
+
+        return [np.asarray(rows, dtype=np.float32).reshape(-1, 6)]
 
     def detect_objects(self, img, conf_tresh=0.6):
         orig_h, orig_w = img.shape[:2]

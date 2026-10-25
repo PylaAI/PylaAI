@@ -490,6 +490,8 @@ def draw_debug_data(image, debug_data, width, height):
     draw_range_circles(image, player_boxes, debug_data.get("attack_range"), debug_data.get("super_range"))
     draw_poison_gas_lines(image, player_boxes, debug_data.get("poison_gas"))
     draw_boxes(image, debug_data.get("wall"), (80, 80, 80), 3)
+    draw_boxes(image, debug_data.get("bush"), (0, 120, 0), 3)
+    draw_boxes(image, debug_data.get("water"), (0, 0, 120), 3)
     draw_boxes(image, player_boxes, (0, 255, 0))
     if advanced_visuals:
         draw_player_hit_circle(image, debug_data.get("player_hit_circle"))

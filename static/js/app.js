@@ -42,15 +42,19 @@ const PYLA_TIPS = [
     { id: "low-fps", title: "Running below 5 FPS?", text: "Try raising any timers below 0.4 seconds to 0.4 in Settings → Timers. Less frequent checks can help on slower PCs.", view: "settings", setting: "wall_detection" },
     { id: "debug-view", title: "See what Pyla sees", text: "Enable Debug View in Settings to watch the frames Pyla is processing. It helps when you're figuring out why the bot is stuck or missing something.", view: "settings", setting: "debug_view" },
     { id: "webhook", title: "Get updates without watching", text: "Add a Webhook URL in Settings → Webhook, then choose notifications for stuck runs, completed targets, or every few matches or minutes.", view: "settings", setting: "webhook_url" },
-    { id: "unsupported-modes", title: "Pick a supported mode", text: "Solo Showdown and Duels aren't supported. Check your playstyle's gamemodes before starting a run.", view: "playstyles" },
+    { id: "unsupported-modes", title: "Pick a supported mode", text: "Solo Showdown and Duels aren't supported in the free edition. Check your playstyle's gamemodes before starting a run.", view: "playstyles" },
     { id: "game-language", title: "Keep Brawl Stars in English", text: "Set Brawl Stars' language to English so Pyla can read the game correctly. You can still use any language for Pyla's interface." },
     { id: "mumu", title: "Try MuMu for better performance", text: "MuMu usually gives the best performance with Pyla. If your current emulator feels slow, it's worth trying." },
     { id: "ldplayer-gas", title: "Walking into the gas on LDPlayer?", text: "Try switching to MuMu if Pyla keeps moving into Showdown gas on LDPlayer." },
-    { id: "boost-premium", audience: "free", title: "Get Premium with a server boost", text: "You can get free Premium by boosting the official Discord while the server is below Level 3. Check the Discord for details.", link: "discord" },
-    { id: "premium-discord", audience: "free", title: "Edit your queue from Discord", text: "Premium adds /add_to_queue, /remove_from_queue and /clear_queue, so you can change your queue remotely while Pyla is stopped.", link: "premium" },
-    { id: "premium-instances", audience: "free", title: "Run more than one account", text: "Premium lets you run multiple emulator instances at once, each with its own Pyla profile and queue.", link: "premium" },
-    { id: "premium-aiming", audience: "free", title: "Try predictive aiming", text: "Premium unlocks Aimbot playstyles, which lead moving targets instead of relying only on auto-aim.", link: "premium" },
-    { id: "premium-api", audience: "free", title: "Sync your Brawl Stars stats", text: "With Premium, add your Player Tag to sync trophies and win streaks through the Brawl Stars API, and use Push All to queue brawlers below your target.", link: "premium" },
+    { id: "boost-premium", audience: "free", title: "Get Premium with a server boost", text: "Boosting the official Discord while the server is below Level 3 gives you Premium access while your boost remains active. Check Discord for current details.", link: "discord" },
+    { id: "early-access-pathfinding", audience: "free", title: "Find a way around obstacles", text: "Early Access v1.1.0 plans routes around walls and water, avoids poison gas, and looks for a reachable position when its destination is blocked.", link: "early-access" },
+    { id: "early-access-bush-camper", audience: "free", title: "Try Showdown Bush Camper", text: "Early Access v1.1.0 includes Showdown Bush Camper. It moves between bushes towards the centre, keeps moving while hiding, and retreats or defends itself when enemies approach. Check its supported gamemodes.", link: "early-access" },
+    { id: "early-access-emulator-test", audience: "free", title: "Find out what's causing lag", text: "Early Access v1.1.0 adds Test emulator delay on the dashboard. Measure emulator delay, capture FPS and bot processing time to see where a slowdown comes from.", link: "early-access" },
+    { id: "weekly-free-access", audience: "free", title: "Try Early Access free each week", text: "Try Early Access free for one day each week, with every Premium feature on the newest build. The day can change; check the official Discord for this week's announcement.", link: "discord" },
+    { id: "premium-discord", audience: "free", title: "Edit your queue from Discord", text: "Stable v1.0 Premium and Early Access include /add_to_queue, /remove_from_queue and /clear_queue, so you can edit your queue remotely while Pyla is stopped.", link: "pricing" },
+    { id: "premium-instances", audience: "free", title: "Run more than one account", text: "Run multiple emulator instances at once with Stable v1.0 Premium or Early Access, each with its own Pyla profile and queue.", link: "pricing" },
+    { id: "premium-aiming", audience: "free", title: "Try predictive aiming", text: "Stable v1.0 Standard and Premium, or Early Access, include Aimbot playstyles that lead moving targets.", link: "pricing" },
+    { id: "premium-api", audience: "free", title: "Sync your Brawl Stars stats", text: "With Stable v1.0 Premium or Early Access, add your Player Tag to sync trophies and win streaks through the Brawl Stars API. Use Push All to queue brawlers below your target.", link: "pricing" },
 ];
 const BRAWLER_RARITIES = {
     "Common": { order: 1, color: "#b8bec9" },
@@ -161,7 +165,6 @@ const SETTINGS_META = {
         { key: "unstuck_movement_delay", label: "Unstuck Delay", type: "number", step: "0.1", help: "Delay before the unstuck routine fires." },
         { key: "unstuck_movement_hold_time", label: "Unstuck Hold Time", type: "number", step: "0.1", help: "How long the unstuck move is held." },
         { key: "perceived_tile_size", label: "Perceived Tile Size", type: "number", help: "Map tile size in pixels used by playstyle movement and wall-aware targeting." },
-        { key: "centered_wall_detection", label: "Centered Wall Detection", type: "checkbox", help: "Use the close wall model on a 640x640 crop centered near the player." },
         { key: "wall_detection_confidence", label: "Wall Confidence", type: "number", step: "0.05", help: "Confidence threshold for wall detection." },
         { key: "entity_detection_confidence", label: "Entity Confidence", type: "number", step: "0.05", help: "Confidence threshold for player and enemy detections." },
         { key: "state_detection_confidence", label: "State Confidence", type: "number", step: "0.05", help: "Confidence threshold used when matching UI templates and game states." },
@@ -3630,10 +3633,13 @@ function renderTip(manual = false) {
     const viewLabels = { settings: "Open Settings", queue: "Open Brawlers", playstyles: "Browse Playstyles", dashboard: "Open Dashboard" };
     const linkUrl = tip.link === "discord"
         ? safeExternalUrl(state.bootstrap.links?.discord?.url)
-        : tip.link === "premium" ? "https://pyla-ai.angelfirela.dev/premium" : "";
+        : tip.link === "early-access" ? "https://pyla-ai.angelfirela.dev/pricing#early-access"
+        : tip.link === "pricing" ? "https://pyla-ai.angelfirela.dev/pricing" : "";
+    const linkLabel = tip.link === "discord" ? "Open Discord"
+        : tip.link === "early-access" ? "Explore Early Access" : "Compare plans";
     const action = tip.view
         ? `<button id="tipActionBtn" class="tips-link" type="button">${escapeHtml(viewLabels[tip.view])}<span aria-hidden="true">→</span></button>`
-        : linkUrl ? `<a class="tips-link" href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer">${tip.link === "discord" ? "Open Discord" : "Learn about Premium"}<span aria-hidden="true">↗</span></a>` : "";
+        : linkUrl ? `<a class="tips-link" href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer">${linkLabel}<span aria-hidden="true">↗</span></a>` : "";
     content.innerHTML = `<strong class="tips-title">${escapeHtml(tip.title)}</strong><p class="tips-text">${escapeHtml(tip.text)}</p>${action}`;
     document.getElementById("tipCounter").textContent = `${state.tipIndex + 1} / ${state.tips.length}`;
     setStorageItem("pylaLastTip", tip.id);

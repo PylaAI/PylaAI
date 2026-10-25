@@ -83,7 +83,6 @@ class WebDataService:
         "unstuck_movement_delay": ("float", 2.4),
         "unstuck_movement_hold_time": ("float", 1.4),
         "perceived_tile_size": ("int", 54),
-        "centered_wall_detection": ("bool", False),
         "wall_detection_confidence": ("float", 0.6),
         "entity_detection_confidence": ("float", 0.6),
         "state_detection_confidence": ("float", 0.75),
