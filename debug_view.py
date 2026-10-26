@@ -106,7 +106,8 @@ class DebugViewPublisher:
             return
 
         try:
-            self.start_viewer(frame)
+            if not self.start_viewer(frame):
+                return
             source = frame if frame.flags["C_CONTIGUOUS"] else np.ascontiguousarray(frame)
             np.copyto(self.frame_array, source)
             self.publish_debug_data(debug_data)
@@ -143,12 +144,17 @@ class DebugViewPublisher:
             exit_code = self.process.returncode
             ran_for = time.perf_counter() - self.process_started_at
             self.close()
+            if exit_code == 0:
+                # The user closed the window (Esc/Q or the close button); don't pop it open again.
+                print("Debug view closed. It will open again the next time Pyla starts.")
+                self.enabled = False
+                return False
             if ran_for < 2.0:
                 log_hint = " See debug_view_worker.log for details." if _running_as_compiled_executable() else ""
                 raise RuntimeError(f"Debug view worker exited immediately with code {exit_code}.{log_hint}")
 
         if self.frame_array is not None and self.shape == shape and self.dtype == dtype:
-            return
+            return True
 
         self.close()
         self.shape = shape
@@ -189,6 +195,7 @@ class DebugViewPublisher:
         self.process = subprocess.Popen(command, **kwargs)
         self.process_started_at = time.perf_counter()
         print(f"Debug view started at up to {self.max_fps:.0f} FPS.")
+        return True
 
     def close(self):
         process = self.process
