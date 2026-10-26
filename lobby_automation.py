@@ -110,5 +110,5 @@ class LobbyAutomation:
             print("Selected brawler ", brawler_search_name)
             return "success"
 
-        print(f"WARNING: Brawler '{brawler}' was not found after 100 scroll attempts.")
+        print(f"WARNING: The brawler menu did not open while selecting '{brawler}'.")
         return "failed"

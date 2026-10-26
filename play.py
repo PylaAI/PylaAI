@@ -58,8 +58,6 @@ class Play:
         self.window_controller = window_controller
         self.TILE_SIZE = bot_config.get("perceived_tile_size", 54)
 
-        bot_config = load_toml_as_dict("cfg/bot_config.toml")
-        time_config = load_toml_as_dict("cfg/time_tresholds.toml")
         self.verbose_debug = config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('verbose_debug'), False)
         if self.verbose_debug:
             if not os.path.exists("debug_frames"):
@@ -121,6 +119,18 @@ class Play:
 
     def attack(self, touch_up=True, touch_down=True):
         self.window_controller.press("attack", touch_up=touch_up, touch_down=touch_down)
+
+    def release_held_attack(self):
+        """Lift an attack a playstyle is still holding, e.g. when the match ends mid-charge."""
+        if self.persistent_data.get("time_since_holding_attack") is None:
+            return
+        self.attack(touch_up=True, touch_down=False)
+        self.persistent_data["time_since_holding_attack"] = None
+
+    def reset_detection_timers(self):
+        current_time = time.time()
+        for key in self.time_since_detections:
+            self.time_since_detections[key] = current_time
 
     def use_hypercharge(self):
         print("Using hypercharge")
@@ -589,7 +599,8 @@ class Play:
         movement = self.clamp_movement(movement_vector)
         current_time = time.time()
         if movement != self.last_movement:
-            if current_time - self.last_movement_change_time >= self.minimum_movement_delay:
+            # After a release there is no previous direction to keep, so the new one applies at once.
+            if self.last_movement == '' or current_time - self.last_movement_change_time >= self.minimum_movement_delay:
                 self.last_movement = movement
                 self.last_movement_change_time = current_time
             else:
@@ -737,8 +748,9 @@ class Play:
                 except Exception:
                     pass
 
-        if movement is not None:
-            debug_data["movement"] = [float(movement[0]), float(movement[1])]
+        movement_vector = self.movement_to_vector(movement)
+        if movement_vector is not None:
+            debug_data["movement"] = list(movement_vector)
 
         self.window_controller.debug_view.publish(frame, debug_data)
 
