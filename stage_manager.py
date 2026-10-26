@@ -56,6 +56,62 @@ class StageManager:
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
+        self.stop_after_matches = self._read_stop_after_matches()
+        # The queue head has to be picked in game before its first match.
+        self.pending_brawler_selection = bool(self.brawlers_pick_data and self.brawlers_pick_data[0]["automatically_pick"])
+        self.next_selection_attempt_time = 0.0
+        self.selection_failures_notified = set()
+        self.load_current_brawler_stats()
+
+    @staticmethod
+    def _read_stop_after_matches():
+        try:
+            return max(0, int(load_toml_as_dict("cfg/general_config.toml").get("stop_after_matches", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def match_limit_reached(self):
+        return bool(self.stop_after_matches) and self.Trophy_observer.match_counter >= self.stop_after_matches
+
+    def load_current_brawler_stats(self):
+        """Point the trophy observer at the brawler currently at the head of the queue."""
+        if not self.brawlers_pick_data:
+            return
+        current = self.brawlers_pick_data[0]
+        self.Trophy_observer.change_trophies(current['trophies'])
+        self.Trophy_observer.current_wins = current['wins'] if current['wins'] != "" else 0
+        self.Trophy_observer.win_streak = current['win_streak']
+
+    def select_current_brawler(self):
+        """Pick the queue head in game, moving brawlers that cannot be picked to the end of the queue.
+
+        Returns "success", "aborted", "stuck", or "failed" once every queued brawler failed in a row.
+        """
+        if time.time() < self.next_selection_attempt_time:
+            return "failed"
+        for _attempt in range(len(self.brawlers_pick_data)):
+            brawler_name = self.brawlers_pick_data[0]['brawler']
+            result = self.Lobby_automation.select_brawler(brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
+            if result == "success":
+                self.pending_brawler_selection = False
+                self.load_current_brawler_stats()
+                return result
+            if result not in ("failed", "error"):
+                return result
+
+            print(f"Automatic selection of {brawler_name} failed, moving it to the end of the queue.")
+            if self.ping_when_stuck and brawler_name not in self.selection_failures_notified:
+                self.selection_failures_notified.add(brawler_name)
+                notify_user("bot_failed_brawler_selection", self.window_controller.screenshot(), self)
+            if self._should_stop() or self._should_pause():
+                return "aborted"
+            self.brawlers_pick_data.append(self.brawlers_pick_data.pop(0))
+            self.load_current_brawler_stats()
+            self.quit_shop()
+
+        print("No brawler in the queue could be selected, retrying in 30 seconds.")
+        self.next_selection_attempt_time = time.time() + 30
+        return "failed"
 
     def _should_stop(self):
         return bool(self.runtime_control and self.runtime_control.should_stop())
@@ -87,7 +143,7 @@ class StageManager:
         return trophy_value
 
     def start_game(self):
-        if self._should_stop() or self._should_pause():
+        if self._should_stop() or self._should_pause() or self.match_limit_reached():
             return
 
         print("state is lobby, starting game")
@@ -116,40 +172,21 @@ class StageManager:
                 notify_user("brawler_goal", screenshot, self)
             print(f'Bot has reached the target trophies/wins for {self.brawlers_pick_data[0]["brawler"]}, moving on to the next one in the list.', value, push_current_brawler_till)
             self.brawlers_pick_data.pop(0)
-            next_brawler_name = self.brawlers_pick_data[0]['brawler']
+            # Stats follow the queue head right away, so a failed pick cannot count the next
+            # brawler's matches against the previous brawler's trophies.
+            self.load_current_brawler_stats()
+            save_brawler_data(self.brawlers_pick_data)
             if self.brawlers_pick_data[0]["automatically_pick"]:
-                select_brawler = self.Lobby_automation.select_brawler(next_brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
-                while select_brawler in ["failed", "error"]:
-                    if self.ping_when_stuck:
-                        screenshot = self.window_controller.screenshot()
-                        notify_user("bot_failed_brawler_selection", screenshot, self)
-                        print(f"Skipping {select_brawler}")
-                    if self._should_stop() or self._should_pause():
-                        return
-                    current_brawler = self.brawlers_pick_data.pop(0)
-                    self.brawlers_pick_data.append(current_brawler)
-                    next_brawler_name = self.brawlers_pick_data[0]['brawler']
-                    self.quit_shop()
-                    select_brawler = self.Lobby_automation.select_brawler(next_brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
-                if select_brawler == "aborted" or select_brawler == "stuck":
-                    return
-                if select_brawler == "success":
-                    self.Trophy_observer.change_trophies(self.brawlers_pick_data[0]['trophies'])
-                    self.Trophy_observer.current_wins = self.brawlers_pick_data[0]['wins'] if self.brawlers_pick_data[0]['wins'] != "" else 0
-                    self.Trophy_observer.win_streak = self.brawlers_pick_data[0]['win_streak']
+                self.pending_brawler_selection = True
             else:
-                self.Trophy_observer.change_trophies(self.brawlers_pick_data[0]['trophies'])
-                self.Trophy_observer.current_wins = self.brawlers_pick_data[0]['wins'] if self.brawlers_pick_data[0]['wins'] != "" else 0
-                self.Trophy_observer.win_streak = self.brawlers_pick_data[0]['win_streak']
+                self.pending_brawler_selection = False
                 print("Next brawler is in manual mode, waiting 10 seconds to let user switch.")
                 if self._sleep_interruptible(10):
                     return
+
+        if self.pending_brawler_selection and self.select_current_brawler() != "success":
+            return
         save_brawler_data(self.brawlers_pick_data)
-        self.matches_since_last_webhook_ping += 1
-        if self.ping_every_x_match and self.matches_since_last_webhook_ping >= self.ping_every_x_match:
-            screenshot = self.window_controller.screenshot()
-            notify_user("regular_matches_ping", screenshot, self)
-            self.matches_since_last_webhook_ping = 0
 
         if self._should_stop() or self._should_pause():
             return
@@ -199,13 +236,18 @@ class StageManager:
                     "trophies": self.Trophy_observer.current_trophies,
                     "wins": self.Trophy_observer.current_wins
                 }
-                type_to_push = self.brawlers_pick_data[0]['type']
-                value = values[type_to_push]
-                self.brawlers_pick_data[0][type_to_push] = value
+                # Keep both counters current: the trophy count also drives the gain/loss
+                # table for brawlers that are pushed for wins.
+                self.brawlers_pick_data[0].update(values)
                 self.brawlers_pick_data[0]['win_streak'] = self.Trophy_observer.win_streak
                 save_brawler_data(self.brawlers_pick_data)
 
-            if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop():
+                self.matches_since_last_webhook_ping += 1
+                if self.ping_every_x_match and self.matches_since_last_webhook_ping >= self.ping_every_x_match:
+                    notify_user("regular_matches_ping", screenshot, self)
+                    self.matches_since_last_webhook_ping = 0
+
+            if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop() and not self.match_limit_reached():
                 self.window_controller.press("play_again")
                 button_pressed = True
             elif not button_pressed:
@@ -216,7 +258,7 @@ class StageManager:
             screenshot = self.window_controller.screenshot()
             current_state = get_state(screenshot)
 
-        if self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause():
+        if button_pressed:
             print("Waiting for match to start...")
             start_wait_time = time.time()
             interrupted = False
