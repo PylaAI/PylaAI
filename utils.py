@@ -4,6 +4,7 @@ import io
 import math
 import os
 import random
+import threading
 import time
 from io import BytesIO
 import ctypes
@@ -373,7 +374,21 @@ def check_version():
             print("Error, couldn't get the version, please check your internet connection or go ask for help in the discord.")
 
 
+def format_session_summary(trophy_observer) -> str:
+    matches = getattr(trophy_observer, "match_counter", 0)
+    if not matches:
+        return ""
+    trophy_delta = getattr(trophy_observer, "session_trophy_delta", 0)
+    return (
+        f"Session: {matches} match{'es' if matches != 1 else ''} "
+        f"({trophy_observer.session_wins}W/{trophy_observer.session_losses}L/{trophy_observer.session_draws}D) | "
+        f"Trophies: {trophy_delta:+d}"
+    )
+
+
 def format_notification_status(stage_manager) -> str:
+    if stage_manager is None or not stage_manager.brawlers_pick_data:
+        return ""
     current_brawler_data = stage_manager.brawlers_pick_data[0]
     push_type = current_brawler_data["type"]
     target = current_brawler_data["push_until"]
@@ -388,20 +403,26 @@ def format_notification_status(stage_manager) -> str:
     next_brawler = stage_manager.brawlers_pick_data[1]["brawler"] if len(stage_manager.brawlers_pick_data) > 1 else "None"
     brawlers_left = max(len(stage_manager.brawlers_pick_data) - 1, 0)
 
-    return (
+    status = (
         f"Current brawler: {current_brawler_data['brawler']} \n"
         f"{push_type.capitalize()}: {current_amount}/{target} | "
         f"Win streak: {win_streak} \n"
         f"Next brawler: {next_brawler} | "
         f"Brawlers left: {brawlers_left}"
     )
+    session_summary = format_session_summary(trophy_observer)
+    if session_summary:
+        status = f"{status}\n{session_summary}"
+    return status
 
 
-def notify_user(message_type, screenshot, stage_manager) -> None:
-    user_id = load_toml_as_dict("cfg/webhook_config.toml")["discord_id"].strip()
-    webhook_url = load_toml_as_dict("cfg/webhook_config.toml")["webhook_url"].strip()
-    telegram_token = load_toml_as_dict("cfg/webhook_config.toml")["telegram_token"].strip()
-    telegram_chat_id = load_toml_as_dict("cfg/webhook_config.toml")["telegram_chat_id"].strip()
+def notify_user(message_type, screenshot, stage_manager, details=None) -> None:
+    """Build a notification now and send it in the background, so slow webhooks never stall the bot."""
+    webhook_config = load_toml_as_dict("cfg/webhook_config.toml")
+    user_id = str(webhook_config.get("discord_id", "")).strip()
+    webhook_url = str(webhook_config.get("webhook_url", "")).strip()
+    telegram_token = str(webhook_config.get("telegram_token", "")).strip()
+    telegram_chat_id = str(webhook_config.get("telegram_chat_id", "")).strip()
     has_discord = webhook_url
     has_telegram = telegram_token and telegram_chat_id
 
@@ -421,8 +442,14 @@ def notify_user(message_type, screenshot, stage_manager) -> None:
     elif message_type == "bot_failed_brawler_selection":
         current_brawler = stage_manager.brawlers_pick_data[0]["brawler"]
         status_line = f"Pyla failed to select the brawler {current_brawler} after multiple attempts, try changing the OCR Scale Down setting or select it manually and restart. Putting it at the end of the queue and skipping it..."
+    elif message_type == "session_limit_reached":
+        status_line = "Pyla played the number of matches set for this session and stopped."
+    elif message_type == "bot_crashed":
+        status_line = "Pyla stopped because of an unexpected error."
     else:
         status_line = "Notification"
+    if details:
+        status_line = f"{status_line}\n{details}"
 
     stage_status = format_notification_status(stage_manager)
     if stage_status:
@@ -439,6 +466,16 @@ def notify_user(message_type, screenshot, stage_manager) -> None:
             print(f"Failed to prepare screenshot: {e}")
             image_buffer = None
 
+    threading.Thread(
+        target=_send_notification,
+        args=(status_line, image_buffer, user_id, webhook_url, telegram_token, telegram_chat_id),
+        name="pyla-notifier",
+    ).start()
+
+
+def _send_notification(status_line, image_buffer, user_id, webhook_url, telegram_token, telegram_chat_id):
+    has_discord = webhook_url
+    has_telegram = telegram_token and telegram_chat_id
     if has_discord:
         ping = f"<@{user_id}>" if user_id else ""
         files = {}

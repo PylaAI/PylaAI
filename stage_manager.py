@@ -56,11 +56,22 @@ class StageManager:
         self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
         self.playstyle_info = playstyle_info
         self.get_latest_state = state_getting
+        self.stop_after_matches = self._read_stop_after_matches()
         # The queue head has to be picked in game before its first match.
         self.pending_brawler_selection = bool(self.brawlers_pick_data and self.brawlers_pick_data[0]["automatically_pick"])
         self.next_selection_attempt_time = 0.0
         self.selection_failures_notified = set()
         self.load_current_brawler_stats()
+
+    @staticmethod
+    def _read_stop_after_matches():
+        try:
+            return max(0, int(load_toml_as_dict("cfg/general_config.toml").get("stop_after_matches", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def match_limit_reached(self):
+        return bool(self.stop_after_matches) and self.Trophy_observer.match_counter >= self.stop_after_matches
 
     def load_current_brawler_stats(self):
         """Point the trophy observer at the brawler currently at the head of the queue."""
@@ -132,7 +143,7 @@ class StageManager:
         return trophy_value
 
     def start_game(self):
-        if self._should_stop() or self._should_pause():
+        if self._should_stop() or self._should_pause() or self.match_limit_reached():
             return
 
         print("state is lobby, starting game")
@@ -236,7 +247,7 @@ class StageManager:
                     notify_user("regular_matches_ping", screenshot, self)
                     self.matches_since_last_webhook_ping = 0
 
-            if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop():
+            if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop() and not self.match_limit_reached():
                 self.window_controller.press("play_again")
                 button_pressed = True
             elif not button_pressed:
@@ -247,7 +258,7 @@ class StageManager:
             screenshot = self.window_controller.screenshot()
             current_state = get_state(screenshot)
 
-        if self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause():
+        if button_pressed:
             print("Waiting for match to start...")
             start_wait_time = time.time()
             interrupted = False

@@ -405,6 +405,13 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                         if self.should_pause():
                             continue
 
+                    if self.Stage_manager.match_limit_reached():
+                        cprint(f"Played {self.Stage_manager.stop_after_matches} matches this session, stopping.", "#AAE5A4")
+                        if load_toml_as_dict("cfg/webhook_config.toml").get("ping_when_target_is_reached"):
+                            notify_user("session_limit_reached", self.window_controller.screenshot(), self.Stage_manager)
+                        self.shutdown()
+                        break
+
                 t_now = time.time()
                 if self.max_fps:
                     frame_start = time.perf_counter()
@@ -464,6 +471,15 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
     main = Main()
     try:
         main.main()
+    except Exception as error:
+        if load_toml_as_dict("cfg/webhook_config.toml").get("ping_when_stuck"):
+            try:
+                screenshot, _ = main.window_controller.get_latest_frame()
+                details = f"{type(error).__name__}: {error}"[:500]
+                notify_user("bot_crashed", screenshot, main.Stage_manager, details=details)
+            except Exception as notify_error:
+                print(f"Could not send the crash notification: {notify_error}")
+        raise
     finally:
         main.shutdown()
 
