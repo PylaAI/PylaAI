@@ -51,3 +51,4 @@ api/requirements.txt
 *.example
 api/licensing_bot.py
 api/licensing_backend.py
+.claude/launch.json
