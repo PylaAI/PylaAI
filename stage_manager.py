@@ -40,6 +40,7 @@ class StageManager:
             'star_drop_angelic': lambda: self.click_star_drop("angelic"),
             'star_drop_demonic': lambda: self.click_star_drop("demonic"),
             'star_drop_starr_nova': lambda: self.click_star_drop("starr_nova"),
+            'daily_wins': self.handle_daily_wins,
             'trophy_reward': lambda: self.window_controller.press("proceed"),
             'prestige_milestone': lambda: self.window_controller.press("continue_or_equip"),
             'end_draw': self.end_game,
@@ -157,6 +158,18 @@ class StageManager:
         self.window_controller.press("proceed")
         print("Pressed to start a match")
         sleep_ui(2)
+
+    def handle_daily_wins(self):
+        while not self._should_stop() and not self._should_pause():
+            frame, frame_time = self.window_controller.get_latest_frame()
+            if (frame is None or frame_time <= 0 or
+                    time.time() - frame_time > self.window_controller.FRAME_STALE_TIMEOUT):
+                return
+            if get_state(frame) != "daily_wins":
+                return
+            self.window_controller.press("proceed")
+            if self._sleep_interruptible(1):
+                return
 
     def click_star_drop(self, drop_type="regular"):
         if hasattr(self, '_star_drop_thread') and self._star_drop_thread.is_alive():

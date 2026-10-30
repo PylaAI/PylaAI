@@ -133,6 +133,8 @@ def get_in_game_state(image):
         star_drop_type = is_in_star_drop(image)
         if star_drop_type:
             return f"star_drop_{star_drop_type}"
+        if should_print_debug_info: print("Checking for daily wins...")
+        if is_in_daily_wins(image): return "daily_wins"
         if should_print_debug_info: print("Checking for trophy reward...")
         if is_in_trophy_reward(image):
             return "trophy_reward"
@@ -194,6 +196,10 @@ def is_in_star_drop(image):
 
 def is_underdog(image):
     return is_template_in_region(image, end_results_path + "underdog.png", region_data['underdog'])
+
+
+def is_in_daily_wins(image):
+    return is_template_in_region(image, states_path + "daily_wins.png", region_data['daily_wins'])
 
 
 def get_state(screenshot):
