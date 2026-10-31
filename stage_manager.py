@@ -167,7 +167,7 @@ class StageManager:
                 return
             if get_state(frame) != "daily_wins":
                 return
-            self.window_controller.press("proceed")
+            self.window_controller.press("middle")
             if self._sleep_interruptible(1):
                 return
 
