@@ -12,7 +12,8 @@
     "9": "heal_pad",
     "10": "speed",
     "11": "slow",
-    "12": "damage"
+    "12": "damage",
+    "13": "fragile"
   },
   "width": 832,
   "height": 480,
@@ -21,5 +22,7 @@
     "class_ids": "uint8 [1,480,832] argmax class",
     "confidence": "float32 [1,480,832] softmax probability of that class"
   },
-  "target": "projected ground occupancy"
+  "target": "projected ground occupancy",
+  "training_run": "terrain20k_v8_cont/weights/best.pt",
+  "sha256": "4029b34318b056e577848683f546cddf5b7ab73c3f4a025caa56c722ca837f8a"
 }

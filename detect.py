@@ -3,6 +3,8 @@ import json
 import os
 import threading
 
+from entity_model import decode_pose, read_layout
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -160,6 +162,8 @@ def _postprocess_raw(raw_output, conf_tresh=0.6, iou_thresh=0.6, end2end=False):
 
 
 class Detect:
+    keypoint_shape = ()
+
     def __init__(self, model_path, ignore_classes=None, classes=None, input_size=(640, 640), tile_size=54):
         threads_to_use = load_toml_as_dict("cfg/general_config.toml")['used_threads']
 
@@ -182,6 +186,13 @@ class Detect:
         self.tile_size = max(1.0, float(tile_size))
         self.model, self.device = self.load_model()
         self.input_name = self.model.get_inputs()[0].name
+        layout = read_layout(self.model)
+        self.keypoint_shape = layout['keypoints']
+        self.end_to_end = layout['end_to_end']
+        if layout['classes']:
+            self.classes = layout['classes']
+        if layout['input_size']:
+            self.input_size = layout['input_size']
         metadata = self.model.get_modelmeta().custom_metadata_map
         self.end2end = metadata.get("end2end", "False").lower() == "true"
         self.semantic_outputs = {output.name: i for i, output in enumerate(self.model.get_outputs())}
@@ -262,7 +273,7 @@ class Detect:
         new_w = int(w * scale)
         new_h = int(h * scale)
         pad_x = pad_y = 0
-        if self.end2end or self.semantic:
+        if self.end2end or self.semantic or self.keypoint_shape:
             new_w, new_h = round(w * scale), round(h * scale)
             pad_x = (self.input_size[1] - new_w) // 2
             pad_y = (self.input_size[0] - new_h) // 2
@@ -287,12 +298,16 @@ class Detect:
         if self.semantic:
             return self._semantic_tile_detections(raw_output, orig_img_shape, resized_shape, conf_tresh)
 
-        detections = _postprocess_raw(
-            raw_output,
-            conf_tresh=conf_tresh,
-            iou_thresh=0.6,
-            end2end=self.end2end
-        )
+        if self.keypoint_shape:
+            detections = decode_pose(raw_output, len(self.classes), self.keypoint_shape, conf_tresh,
+                                     self.end_to_end, _numpy_nms, keep_points=False)
+        else:
+            detections = _postprocess_raw(
+                raw_output,
+                conf_tresh=conf_tresh,
+                iou_thresh=0.6,
+                end2end=self.end2end
+            )
 
         orig_h, orig_w = orig_img_shape
         resized_w, resized_h = resized_shape
@@ -304,14 +319,14 @@ class Detect:
 
         for det in detections:
             if len(det):
-                if self.end2end:
+                if self.end2end or self.keypoint_shape:
                     det[:, [0, 2]] -= (self.input_size[1] - resized_w) // 2
                     det[:, [1, 3]] -= (self.input_size[0] - resized_h) // 2
                 det[:, 0] *= scale_w
                 det[:, 1] *= scale_h
                 det[:, 2] *= scale_w
                 det[:, 3] *= scale_h
-                if self.end2end:
+                if self.end2end or self.keypoint_shape:
                     det[:, [0, 2]] = np.clip(det[:, [0, 2]], 0, orig_w)
                     det[:, [1, 3]] = np.clip(det[:, [1, 3]], 0, orig_h)
                 results.append(det)

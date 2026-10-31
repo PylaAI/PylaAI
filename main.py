@@ -479,10 +479,11 @@ all_brawlers = get_brawler_list()
 if api_base_url != "localhost":
     update_missing_brawlers_info(all_brawlers)
     check_version()
-    update_wall_model_classes()
-    if not current_wall_model_is_latest():
-        print("New Wall detection model found, downloading... (this might take a few minutes depending on your internet)")
-        get_latest_wall_model_file()
+    if not os.path.isfile('./models/tileDetector.json'):
+        update_wall_model_classes()
+        if not current_wall_model_is_latest():
+            print("New Wall detection model found, downloading... (this might take a few minutes depending on your internet)")
+            get_latest_wall_model_file()
 
 
 def find_open_port(start_port=5185, host="127.0.0.1"):

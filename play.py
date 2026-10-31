@@ -21,6 +21,8 @@ POISON_HIGH_HSV = np.array((57, 114, 235), dtype=np.uint8)
 PLAYER_HIT_CIRCLE_RADIUS = 53
 
 class Play:
+    _selected_enemy_spawnable = None
+
 
     def __init__(self, main_info_model, tile_detector_model, window_controller, pyla_code):
         bot_config = load_toml_as_dict("cfg/bot_config.toml")
@@ -123,18 +125,24 @@ class Play:
         self.window_controller.press("attack", touch_up=touch_up, touch_down=touch_down)
 
     def use_hypercharge(self):
+        if not self.can_use_ability_on_enemy():
+            return False
         print("Using hypercharge")
         self.window_controller.press("hypercharge")
         self.time_since_hypercharge_checked = time.time()
         self.is_hypercharge_ready = False
 
     def use_gadget(self):
+        if not self.can_use_ability_on_enemy():
+            return False
         print("Using gadget")
         self.window_controller.press("gadget")
         self.time_since_gadget_checked = time.time()
         self.is_gadget_ready = False
 
     def use_super(self):
+        if not self.can_use_ability_on_enemy():
+            return False
         print("Using super")
         self.window_controller.press("super")
         self.time_since_super_checked = time.time()
@@ -354,6 +362,39 @@ class Play:
             return False
         return True
 
+    @staticmethod
+    def enemy_targets(data):
+        """Same candidate list for the playstyle's attacks and movement, with no brawler priority."""
+        return list(data.get('enemy') or []) + list(data.get('enemy_spawnable') or [])
+
+    @staticmethod
+    def is_there_enemy_spawnable(spawnable_data):
+        return bool(spawnable_data)
+
+    def find_closest_enemy_spawnable(self, spawnable_data, player_coords, walls):
+        target = self.find_closest_enemy(spawnable_data, player_coords, walls, 'attack')
+        self._selected_enemy_spawnable = True if target[0] is not None else None
+        return target
+
+    def is_enemy_spawnable(self, enemy_box):
+        """Whether this box belongs to the current frame's hostile spawnable detections."""
+        if enemy_box is None:
+            return False
+        return any(tuple(enemy_box[:4]) == tuple(box[:4])
+                   for box in (getattr(self, 'context', None) or {}).get('enemy_spawnable_data', []))
+
+    def select_enemy_target(self, enemy_box):
+        """Remember the kind selected by find_closest_enemy; normal attacks stay unchanged."""
+        self._selected_enemy_spawnable = None if enemy_box is None else self.is_enemy_spawnable(enemy_box)
+
+    def can_use_ability_on_enemy(self):
+        """Abilities follow the selected target, even when other brawlers are visible elsewhere."""
+        if self._selected_enemy_spawnable is not None:
+            return not self._selected_enemy_spawnable
+        # A custom script may call an ability without first calling find_closest_enemy.
+        context = getattr(self, 'context', None) or {}
+        return not (context.get('enemy_spawnable_data') and not context.get('enemy_brawler_data'))
+
     def find_closest_enemy(self, enemy_data, player_coords, walls, skill_type):
         player_pos_x, player_pos_y = player_coords
         closest_hittable_distance = float('inf')
@@ -366,16 +407,19 @@ class Play:
             if self.is_enemy_hittable((player_pos_x, player_pos_y), enemy_pos, walls, skill_type):
                 if distance < closest_hittable_distance:
                     closest_hittable_distance = distance
-                    closest_hittable = [enemy_pos, distance]
+                    closest_hittable = [enemy_pos, distance, enemy]
             else:
                 if distance < closest_unhittable_distance:
                     closest_unhittable_distance = distance
-                    closest_unhittable = [enemy_pos, distance]
+                    closest_unhittable = [enemy_pos, distance, enemy]
         if closest_hittable:
-            return closest_hittable
+            self.select_enemy_target(closest_hittable[2])
+            return closest_hittable[:2]
         elif closest_unhittable:
-            return closest_unhittable
+            self.select_enemy_target(closest_unhittable[2])
+            return closest_unhittable[:2]
 
+        self.select_enemy_target(None)
         return None, None
 
     def find_closest_teammate(self, teammate_data, player_coords, walls):
@@ -536,9 +580,14 @@ class Play:
         return target_x, target_y
 
     def loop(self, brawler, data, current_time):
+        self.current_brawler = brawler
         self.context = {
                 'player_data': data['player'][0],
-                'enemy_data': data['enemy'],
+                'enemy_data': self.enemy_targets(data),
+                'enemy_brawler_data': data.get('enemy', []),
+                'enemy_spawnable_data': data.get('enemy_spawnable', []),
+                'teammate_spawnable_data': data.get('teammate_spawnable', []),
+                'ignored_spawnable_data': data.get('ignored_spawnable', []),
                 'teammate_data': data['teammate'],
                 'brawler': brawler,
                 'walls': data['wall'],
@@ -554,6 +603,9 @@ class Play:
                 'get_actual_player_box': self.get_actual_player_box,
                 'get_brawler_range': self.get_brawler_range,
                 'is_there_enemy': self.is_there_enemy,
+                'is_there_enemy_spawnable': self.is_there_enemy_spawnable,
+                'find_closest_enemy_spawnable': self.find_closest_enemy_spawnable,
+                'is_enemy_spawnable': self.is_enemy_spawnable,
                 'attack': self.attack,
                 'use_hypercharge': self.use_hypercharge,
                 'use_super': self.use_super,
@@ -692,6 +744,7 @@ class Play:
         return walls, bushes, water, rope_fences
 
     def get_movement(self):
+        self._selected_enemy_spawnable = None
         movement, updated_globals = interpret_pyla_code(self.pyla_code, self.context)
         return movement
 

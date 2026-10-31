@@ -1,0 +1,23 @@
+{
+  "classes": {
+    "0": "player",
+    "1": "teammate",
+    "2": "enemy",
+    "3": "teammate_spawnable",
+    "4": "enemy_spawnable",
+    "5": "ignored_spawnable"
+  },
+  "keypoints": [
+    "ground"
+  ],
+  "kpt_shape": [
+    1,
+    3
+  ],
+  "height": 384,
+  "width": 640,
+  "source": "entities_v8_ignore_n_640/weights/best.pt",
+  "input": "RGB float32 BCHW, centred letterbox (114/255)",
+  "box": "full entity extent; ground circle width, badge/model top through circle/model bottom",
+  "point": "ground position, not box centre"
+}

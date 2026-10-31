@@ -26,7 +26,8 @@ player_data: List[float] = [0.0, 0.0, 0.0, 0.0]
 """Bounding box of the player [x1, y1, x2, y2]."""
 
 enemy_data: List[List[float]] = []
-"""List of bounding boxes for enemies: [[x1, y1, x2, y2], ...]."""
+"""Enemy brawler and targetable enemy spawnable boxes: [[x1, y1, x2, y2], ...].
+Both use the same playstyle target selection and normal attacks. Abilities are blocked for a selected spawnable."""
 
 teammate_data: List[List[float]] = []
 """List of bounding boxes for teammates: [[x1, y1, x2, y2], ...]."""
@@ -189,3 +190,27 @@ def is_enemy_hittable(
 def rotate_movement(move_str: str, angle_radian: float) -> str:
     """Rotates the movement keys by a given angle in radians."""
     return ""
+
+
+# Separate class lists are also available; enemy_data combines brawlers and hostile spawnables.
+enemy_brawler_data: List[List[float]] = []
+enemy_spawnable_data: List[List[float]] = []
+teammate_spawnable_data: List[List[float]] = []
+ignored_spawnable_data: List[List[float]] = []
+
+
+def is_there_enemy_spawnable(spawnable_data: List[List[float]]) -> bool:
+    """Whether a targetable enemy summon is visible. Ignored/allied summons never count."""
+    return bool(spawnable_data)
+
+
+def find_closest_enemy_spawnable(spawnable_data, player_coords, walls):
+    """Return (box-derived position, distance), using the normal-attack wall checks."""
+    return None, None
+
+
+def is_enemy_spawnable(enemy_box: List[float]) -> bool:
+    """Whether a box is an enemy spawnable. find_closest_enemy remembers this for ability calls:
+    normal attacks are unchanged, but gadget/super/hypercharge are blocked when its target is a spawnable.
+    """
+    return False
