@@ -7,6 +7,11 @@ from utils import (
     load_toml_as_dict, config_bool, load_brawlers_info,
     normalize_brawler_filename, sleep_ui, ui_delay,
 )
+from state_finder import is_in_loading_screen
+
+# Idle checks in a row (cfg time_thresholds "idle" apart) that must see the idle-disconnect screen before tapping. With
+# the default 3 s, 6 s: longer than the Android splash and black frame at app start.
+IDLE_CONFIRM_CHECKS = 3
 
 
 class LobbyAutomation:
@@ -19,14 +24,24 @@ class LobbyAutomation:
         self.window_controller = window_controller
         self.verbose_debug = config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('verbose_debug'), False)
         self.idle_disconnect_hsv_high_bounds = load_toml_as_dict("cfg/lobby_config.toml").get("hsv_bounds", {}).get("idle_reconnect_high_bounds", [[10, 22, 42], [10, 22, 90], [118, 66, 46]])
+        self._idle_checks_in_a_row = 0
 
     def check_for_idle(self, frame):
+        """Tap the idle-disconnect screen away. It stays until tapped, so it must be seen on IDLE_CONFIRM_CHECKS
+        checks in a row: dark screens that only pass by (black frames and fades between screens) are not tapped.
+        The loading screen is never tapped: its logo's black outlines count as gray, and taps sent while it shows
+        reach the lobby behind it (its left "+" slot opens the friend menu)."""
+        if is_in_loading_screen(frame):
+            self._idle_checks_in_a_row = 0
+            return
         wr = self.window_controller.width_ratio
         hr = self.window_controller.height_ratio
         x_start, x_end = int(460 * wr), int(1460 * wr)
         y_start, y_end = int(400 * hr), int(675 * hr)
         if self.verbose_debug:
             print(f"gray pixels (if > {self.gray_pixels_treshold} then bot will try to unidle)")
+        # Each bound is one emulator's look of the idle screen; any of them counts.
+        matching_bounds = 0
         for idle_disconnect_hsv_high_bound in self.idle_disconnect_hsv_high_bounds:
             gray_pixels = count_hsv_pixels(frame[y_start:y_end, x_start:x_end], (0, 0, 0), tuple(idle_disconnect_hsv_high_bound), self.window_controller)
             if self.verbose_debug:
@@ -35,9 +50,19 @@ class LobbyAutomation:
                 except Exception:
                     pass
             if gray_pixels > self.gray_pixels_treshold:
-                print("Idle detected, clicking to unidle")
-                for idle_reconnect_coord in self.idle_reconnect_coords:
-                    self.window_controller.click(idle_reconnect_coord[0], idle_reconnect_coord[1], already_include_ratio=False)
+                matching_bounds += 1
+        self._idle_checks_in_a_row = self._idle_checks_in_a_row + 1 if matching_bounds else 0
+        if not matching_bounds:
+            return
+        if self._idle_checks_in_a_row < IDLE_CONFIRM_CHECKS:
+            print("Possible idle screen, confirming on the next check")
+            return
+        # Once confirmed, it taps on every check while the screen stays, one round per matching bound: the extra
+        # rounds are retries for emulators where a tap can be lost.
+        for _ in range(matching_bounds):
+            print("Idle detected, clicking to unidle")
+            for idle_reconnect_coord in self.idle_reconnect_coords:
+                self.window_controller.click(idle_reconnect_coord[0], idle_reconnect_coord[1], already_include_ratio=False)
 
 
     @staticmethod

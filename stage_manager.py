@@ -29,18 +29,22 @@ class StageManager:
         self.time_since_last_stat_change = time.time()
         self.play_again_on_win = load_toml_as_dict("./cfg/bot_config.toml")["play_again_on_win"] == "yes"
         self.window_controller = window_controller
+        self.last_handled_state = None
         self.states = {
             'shop': self.quit_shop,
             'brawler_selection': self.quit_shop,
             'popup': self.close_pop_up,
             'match': lambda: 0,
             'match_making': lambda: 0,
+            'loading': lambda: 0,     # wait: a tap now may reach the lobby (the friend menu's "+" slot, Play)
             'lobby': self.start_game,
             'star_drop_regular': lambda: self.click_star_drop("regular"),
             'star_drop_angelic': lambda: self.click_star_drop("angelic"),
             'star_drop_demonic': lambda: self.click_star_drop("demonic"),
             'star_drop_starr_nova': lambda: self.click_star_drop("starr_nova"),
             'daily_wins': self.handle_daily_wins,
+            'exit_showdown': self.exit_showdown,
+            'friend_menu': self.close_friend_menu,
             'trophy_reward': lambda: self.window_controller.press("proceed"),
             'prestige_milestone': lambda: self.window_controller.press("continue_or_equip"),
             'end_draw': self.end_game,
@@ -171,6 +175,18 @@ class StageManager:
             if self._sleep_interruptible(1):
                 return
 
+    def exit_showdown(self):
+        print("Player is out of the Showdown match, pressing Exit")
+        self.window_controller.press("exit_showdown")
+        sleep_ui(1)
+
+    def close_friend_menu(self):
+        # Its Quick Join button would put the bot in a stranger's team. Logged with the screen handled before it,
+        # to find out how the menu gets opened.
+        print(f"Friend menu is open (previous screen: {self.last_handled_state}), closing it")
+        self.window_controller.press("exit_friend_menu")
+        sleep_ui(1)
+
     def click_star_drop(self, drop_type="regular"):
         if hasattr(self, '_star_drop_thread') and self._star_drop_thread.is_alive():
             return
@@ -277,5 +293,7 @@ class StageManager:
             return
         if data is not None:
             action(data)
-            return
-        action()
+        else:
+            action()
+        if state != "friend_menu":
+            self.last_handled_state = state

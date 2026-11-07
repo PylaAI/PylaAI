@@ -115,8 +115,14 @@ def get_in_game_state(image):
         if should_print_debug_info: print("Checking for match result...")
         game_result = is_in_end_of_a_match(image)
         if game_result: return f"end_{game_result}"
+        if should_print_debug_info: print("Checking for loading screen...")
+        if is_in_loading_screen(image): return "loading"
         if should_print_debug_info: print("Checking for lobby...")
         if is_in_lobby(image): return "lobby"
+        # After the lobby: its close button covers the lobby menu icon, so an open friend menu is never the lobby,
+        # and a lobby that also shows the friends icon is still the lobby.
+        if should_print_debug_info: print("Checking for friend menu...")
+        if is_in_friend_menu(image): return "friend_menu"
         if should_print_debug_info: print("Checking for match making...")
         if is_in_match_making(image): return "match_making"
         if should_print_debug_info: print("Checking for brawler selection...")
@@ -138,6 +144,9 @@ def get_in_game_state(image):
         if should_print_debug_info: print("Checking for trophy reward...")
         if is_in_trophy_reward(image):
             return "trophy_reward"
+        # Last: the gamemode is not known here, and only Showdown shows this button.
+        if should_print_debug_info: print("Checking for showdown exit...")
+        if is_in_showdown_exit(image): return "exit_showdown"
 
         return "match"
     finally:
@@ -200,6 +209,21 @@ def is_underdog(image):
 
 def is_in_daily_wins(image):
     return is_template_in_region(image, states_path + "daily_wins.png", region_data['daily_wins'])
+
+
+def is_in_loading_screen(image):
+    """Brawl Stars' loading screen (app start): its logo. Taps sent while it shows can reach the lobby behind it."""
+    return is_template_in_region(image, states_path + "loading_logo.png", region_data['loading_logo'])
+
+
+def is_in_friend_menu(image):
+    """The side friend menu, whose Quick Join button joins a random team."""
+    return is_template_in_region(image, states_path + "friend_menu_icon.png", region_data['friend_menu_icon'])
+
+
+def is_in_showdown_exit(image):
+    """The Exit button shown after dying in Showdown, while the match goes on without the player."""
+    return is_template_in_region(image, states_path + "exit_outline.png", region_data['showdown_exit'])
 
 
 def get_state(screenshot):
