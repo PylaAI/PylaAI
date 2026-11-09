@@ -113,13 +113,18 @@ class DiscordBot:
             if not await self.require_authorized_user(interaction):
                 return
 
-            if not self.window_controller:
+            window_controller = self.window_controller
+            if not window_controller:
                 await interaction.response.send_message(
                     "Failed to take a screenshot, is the bot running ?",
                     ephemeral=True
                 )
                 return
-            screenshot_frame = self.window_controller.screenshot()
+            try:
+                screenshot_frame = await asyncio.to_thread(window_controller.screenshot)
+            except Exception as error:
+                print(f"Discord screenshot failed: {error}")
+                screenshot_frame = None
             if screenshot_frame is None:
                 await interaction.response.send_message(
                     "Failed to take a screenshot, is the bot running ?",
@@ -322,11 +327,25 @@ class DiscordBot:
                     ephemeral=True
                 )
                 return
+            window_controller = self.window_controller
+            if not window_controller:
+                await interaction.response.send_message(
+                    "The bot is still connecting to the emulator, try again in a few seconds.",
+                    ephemeral=True
+                )
+                return
             await interaction.response.send_message(
                 f"Restarting brawl stars !",
                 ephemeral=True
             )
-            self.window_controller.restart_brawl_stars()
+            # The restart waits a few seconds; keep it off the event loop so other commands stay responsive.
+            try:
+                restarted = await asyncio.to_thread(window_controller.restart_brawl_stars)
+            except Exception as error:
+                print(f"Could not restart Brawl Stars: {error}")
+                restarted = False
+            if restarted is False:
+                await interaction.followup.send("Could not restart Brawl Stars, check the logs.", ephemeral=True)
 
         @self.tree.command(
             name="view_queue",

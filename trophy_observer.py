@@ -139,6 +139,8 @@ class TrophyObserver:
                     for row in reader:
                         if None in row:
                             raise ValueError("A row contains more values than the CSV header")
+                        if not any(str(value or "").strip() for value in row.values()):
+                            continue
                         history.append(self._normalize_history_row(row))
 
                 return history

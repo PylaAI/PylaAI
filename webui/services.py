@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import date, datetime
+import io
 import json
 import logging
 import shutil
@@ -746,7 +747,12 @@ class WebDataService:
 
         grouped: dict[str, dict[str, Any]] = {}
 
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        try:
+            handle = csv_path.open("r", encoding="utf-8-sig", newline="")
+        except FileNotFoundError:
+            # Nothing recorded yet; the bot creates the file after its first match.
+            handle = io.StringIO()
+        with handle:
             for row in csv.DictReader(handle):
                 brawler = str(row.get("brawler_name", "")).strip()
                 if not brawler:

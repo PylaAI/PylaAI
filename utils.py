@@ -168,53 +168,39 @@ def clear_brawler_data():
         queue_path.unlink()
 
 
+def _queue_int(value, default=0):
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 def clean_queue(data):
     cleaned_data = []
-    for brawler_data in data:
-        if brawler_data['type'] not in ["trophies", "wins"]:
-            brawler_data['type'] = "trophies"
-        type_of_push = brawler_data['type']
-        if brawler_data[type_of_push] == "":
-            brawler_data[type_of_push] = 0
+    for brawler_data in data or []:
+        if not isinstance(brawler_data, dict) or not str(brawler_data.get('brawler', '')).strip():
+            print(f"Skipping invalid queue entry: {brawler_data!r}")
+            continue
+        type_of_push = brawler_data.get('type')
+        if type_of_push not in ["trophies", "wins"]:
+            type_of_push = "trophies"
+        brawler_data['type'] = type_of_push
 
-        if brawler_data['push_until'] == "":
-            if type_of_push == "wins":
-                brawler_data['push_until'] = 300
-            elif type_of_push == "trophies":
-                brawler_data['push_until'] = 1000
-        value = brawler_data[type_of_push]
-        if isinstance(value, str):
-            try:
-                value = int(value)
-            except ValueError:
-                value = 0
-        current_win_streak = brawler_data["win_streak"] if "win_streak" in brawler_data else 0
-        if not isinstance(current_win_streak, int):
-            try:
-                current_win_streak = int(current_win_streak)
-            except ValueError:
-                current_win_streak = 0
-        automatically_pick = brawler_data["automatically_pick"]
+        push_until = brawler_data.get('push_until', "")
+        if push_until in ("", None):
+            push_until = 300 if type_of_push == "wins" else 1000
+        push_until = _queue_int(push_until)
+        current_win_streak = _queue_int(brawler_data.get("win_streak", 0))
+        automatically_pick = brawler_data.get("automatically_pick", False)
         if not isinstance(automatically_pick, bool):
             automatically_pick = str(automatically_pick).strip().lower() in {"1", "true", "yes", "on"}
-        current_wins = brawler_data["wins"]
-        if not isinstance(current_wins, int):
-            try:
-                current_wins = int(current_wins)
-            except ValueError:
-                current_wins = 0
-        current_trophies = brawler_data["trophies"]
-        if not isinstance(current_trophies, int):
-            try:
-                current_trophies = int(current_trophies)
-            except ValueError:
-                current_trophies = 0
-        push_until = brawler_data['push_until']
-        if not isinstance(push_until, int):
-            try:
-                push_until = int(push_until)
-            except ValueError:
-                push_until = 0
+        current_wins = _queue_int(brawler_data.get("wins", 0))
+        current_trophies = _queue_int(brawler_data.get("trophies", 0))
+        value = current_wins if type_of_push == "wins" else current_trophies
 
         if value < push_until:
             final_brawler_data = {"brawler": brawler_data['brawler'], "type": type_of_push, "trophies": current_trophies, "wins": current_wins, "push_until": push_until, "automatically_pick": automatically_pick, "win_streak": current_win_streak}
@@ -293,7 +279,11 @@ def update_missing_brawlers_info(brawlers):
 
 def get_brawler_info(brawler_name):
     url = f'https://{api_base_url}/get_brawler_info'  # Adjust the URL if necessary
-    response = requests.post(url, json={'brawler_name': brawler_name})
+    try:
+        response = requests.post(url, json={'brawler_name': brawler_name}, timeout=10)
+    except requests.RequestException as e:
+        print(f"Error fetching info for '{brawler_name}': {e}")
+        return None
     if response.status_code == 200:
         data = response.json()
         return data.get('info', [])
@@ -307,7 +297,11 @@ def save_brawler_icon(brawler_name):
     brawler_name_clean = brawler_name.lower().replace(' ', '').replace('-', '').replace('.', '').replace('&',
                                                                                                          '')
     brawlers_url = "https://api.brawlapi.com/v1/brawlers"
-    response = requests.get(brawlers_url)
+    try:
+        response = requests.get(brawlers_url, timeout=10)
+    except requests.RequestException as e:
+        print(f"Failed to fetch brawlers from API: {e}")
+        return
     if response.status_code != 200:
         print(f"Failed to fetch brawlers from API: {response.status_code}")
         return
@@ -318,7 +312,11 @@ def save_brawler_icon(brawler_name):
         api_brawler_name = brawler_obj['name'].lower().replace(' ', '').replace('-', '').replace('.', '').replace('&', '')
         if api_brawler_name == brawler_name_clean:
             icon_url = brawler_obj['imageUrl2']
-            img_response = requests.get(icon_url)
+            try:
+                img_response = requests.get(icon_url, timeout=10)
+            except requests.RequestException as e:
+                print(f"Failed to download icon for '{brawler_name}': {e}")
+                return
             if img_response.status_code == 200:
                 image = Image.open(BytesIO(img_response.content))
                 safe_name = os.path.basename(brawler_name_clean).replace('/', '').replace('\\', '')
@@ -338,12 +336,13 @@ DOWNLOAD_URL = "https://pyla-ai.angelfirela.dev/download"
 
 def get_latest_version():
     url = f'https://{api_base_url}/check_version'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('version', '')
-    else:
-        return None
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json().get('version', '')
+    except (requests.RequestException, ValueError):
+        pass
+    return None
 
 
 def get_announcements():
@@ -506,26 +505,31 @@ def notify_user(message_type, screenshot, stage_manager) -> None:
             print(f"Error sending Telegram notification: {e}")
 
 
+DEFAULT_DISCORD_LINK = "https://discord.gg/xUusk3fw4A"
+
+
 def get_discord_link():
     if api_base_url == "localhost":
-        return "https://discord.gg/xUusk3fw4A"
+        return DEFAULT_DISCORD_LINK
     url = f'https://{api_base_url}/get_discord_link'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('link', '')
-    else:
-        return None
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json().get('link', '') or DEFAULT_DISCORD_LINK
+    except (requests.RequestException, ValueError):
+        pass
+    return DEFAULT_DISCORD_LINK
 
 
 def get_online_wall_model_hash():
     url = f'https://{api_base_url}/get_wall_model_hash'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('hash', '')
-    else:
-        return None
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json().get('hash', '')
+    except (requests.RequestException, ValueError) as e:
+        print(f"Could not check the wall model version: {e}")
+    return None
 
 
 def calculate_sha256(file_path):
@@ -546,18 +550,27 @@ def current_wall_model_is_latest() -> bool:
     """
     if not os.path.exists("models/tileDetector.onnx"):
         return False
-    local_hash = calculate_sha256("models/tileDetector.onnx")
     online_hash = get_online_wall_model_hash()
-    return local_hash == online_hash
+    if not online_hash:
+        # Without an answer from the API, keep the model we have instead of downloading blindly.
+        return True
+    return calculate_sha256("models/tileDetector.onnx") == online_hash
 
 
 def get_latest_wall_model_file():
     #download the new model to replace the current file and also updates the tile list
     url = f'https://{api_base_url}/get_wall_model_file'
-    response = requests.get(url)
+    try:
+        response = requests.get(url, timeout=(10, 300))
+    except requests.RequestException as e:
+        print(f"Failed to download the latest wall model: {e}")
+        return
     if response.status_code == 200:
-        with open("./models/tileDetector.onnx", "wb") as file:
+        # Write next to the model and swap it in, so an interrupted write can't corrupt the current one.
+        temporary_path = "./models/tileDetector.onnx.download"
+        with open(temporary_path, "wb") as file:
             file.write(response.content)
+        os.replace(temporary_path, "./models/tileDetector.onnx")
         print("Downloaded the latest wall model.")
     else:
         print(f"Failed to download the latest wall model. Status code: {response.status_code}")
@@ -565,12 +578,13 @@ def get_latest_wall_model_file():
 
 def get_latest_wall_model_classes():
     url = f'https://{api_base_url}/get_wall_model_classes'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('classes', [])
-    else:
-        return None
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json().get('classes', [])
+    except (requests.RequestException, ValueError):
+        pass
+    return None
 
 
 def update_wall_model_classes():

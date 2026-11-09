@@ -160,8 +160,8 @@ class WindowController:
             atexit.register(self.close)
             print("Scrcpy client started successfully.")
 
-        except Exception:
-            raise Exception(f"Error during ADB/scrcpy initialization\nFailed to connect to the emulator/device.\nMake sure you have ADB enabled in your emulator settings. If you don't know how, check https://vimeo.com/1174882529?fl=pl&fe=s.\n if it still doesn't work, check https://discord.com/channels/1205263029269438574/1227618442073342002/1499331741838610433 to try fixing it.")
+        except Exception as error:
+            raise Exception(f"Error during ADB/scrcpy initialization ({type(error).__name__}: {error})\nFailed to connect to the emulator/device.\nMake sure you have ADB enabled in your emulator settings. If you don't know how, check https://vimeo.com/1174882529?fl=pl&fe=s.\n if it still doesn't work, check https://discord.com/channels/1205263029269438574/1227618442073342002/1499331741838610433 to try fixing it.") from error
         self.are_we_moving = False
         self.PID_JOYSTICK = 1
         self.PID_ATTACK = 2
