@@ -70,7 +70,11 @@ class TrophyObserver:
         self.match_history = self.load_history()
         self.last_sent_index = len(self.match_history)
         self.win_streak = 0
-        self.match_counter = 0  # New counter for the number of matches
+        self.match_counter = 0  # Matches recorded since this run started
+        self.session_wins = 0
+        self.session_losses = 0
+        self.session_draws = 0
+        self.session_trophy_delta = 0
         self.trophy_lose_ranges = [(49, 0), (299, 1), (599, 2), (799, 3), (999, 4), (1099, 5), (1199, 6), (1299, 7),
                                    (1499, 8), (1799, 9), (3999, 10), (float("inf"), 15)]
         self.trophy_win_ranges = [(1999, 10), (2499, 8), (2799, 6), (2999, 4), (3099, 2), (float("inf"), 1)]
@@ -300,6 +304,13 @@ class TrophyObserver:
             "power_level": power_level if power_level is not None else -1,
         })
         self.match_counter += 1
+        self.session_trophy_delta += self.current_trophies - old_trophies
+        if parsed_result.result == MatchResult.VICTORY:
+            self.session_wins += 1
+        elif parsed_result.result == MatchResult.DEFEAT:
+            self.session_losses += 1
+        else:
+            self.session_draws += 1
         if self.match_counter % 3 == 0:
             self.send_results_to_api()
         self.save_history()

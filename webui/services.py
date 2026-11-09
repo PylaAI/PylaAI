@@ -53,6 +53,7 @@ class WebDataService:
 
     GENERAL_FIELDS: dict[str, tuple[str, Any]] = {
         "run_for_minutes": ("int", 0),
+        "stop_after_matches": ("int", 0),
         "player_tag": ("str", ""),
         "default_trophy_target": ("int", 1000),
         "play_order": ("play_order", "in_order"),

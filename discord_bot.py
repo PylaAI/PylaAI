@@ -1,5 +1,6 @@
 import asyncio
 import time
+from datetime import date
 from io import BytesIO
 
 from discord import app_commands
@@ -308,6 +309,18 @@ class DiscordBot:
             )
 
         @self.tree.command(
+            name="stats",
+            description="Show the results of the current session and of today",
+        )
+        async def stats(interaction: discord.Interaction):
+            if not await self.require_authorized_user(interaction):
+                return
+
+            today = date.today()
+            history = await asyncio.to_thread(self.data_service.get_match_history_payload, today, today)
+            await interaction.response.send_message(self.format_stats_message(history), ephemeral=True)
+
+        @self.tree.command(
             name="restart_brawl_stars",
             description="Restarts Brawl Stars if the bot is running",
         )
@@ -383,6 +396,7 @@ class DiscordBot:
                 "pause": "Makes the bot pause once it reaches the lobby",
                 "start": "Starts the bot if it's not already running",
                 "status": "Returns the current status of the bot",
+                "stats": "Show the results of the current session and of today",
                 "restart_brawl_stars": "Restarts Brawl Stars if the bot is running",
                 "view_queue": "View the current queue of the bot",
                 "add_to_queue": "**Premium Only:** Add a brawler to the queue remotely.",
@@ -398,6 +412,34 @@ class DiscordBot:
                 message,
                 ephemeral=True
             )
+
+    @staticmethod
+    def format_stats_message(history):
+        session = history.get("session_summary") or {}
+        if session.get("active"):
+            session_line = (
+                f"**Session:** {session.get('total_matches', 0)} matches, "
+                f"{session.get('wins', 0)}W/{session.get('losses', 0)}L "
+                f"({session.get('win_rate', 0.0)}% win rate), trophies {session.get('trophy_delta', 0):+d}"
+            )
+        else:
+            session_line = "**Session:** the bot is not running."
+
+        items = history.get("items") or []
+        summary = history.get("summary") or {}
+        today_delta = sum(item.get("trophy_delta", 0) for item in items)
+        lines = [
+            session_line,
+            f"**Today:** {summary.get('total_matches', 0)} matches, "
+            f"{summary.get('wins', 0)}W/{summary.get('losses', 0)}L "
+            f"({summary.get('win_rate', 0.0)}% win rate), trophies {today_delta:+d}",
+        ]
+        for item in items[:10]:
+            lines.append(
+                f"- {item['brawler']}: {item['wins']}W/{item['losses']}L, trophies {item['trophy_delta']:+d}"
+            )
+        return "\n".join(lines)
+
     def run_bot(self):
         discord_bot_token = str(load_toml_as_dict("cfg/webhook_config.toml").get("discord_bot_token", "")).strip()
         if not discord_bot_token:
