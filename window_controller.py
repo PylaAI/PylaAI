@@ -241,11 +241,17 @@ class WindowController:
         return False
 
     def restart_brawl_stars(self):
-        self.device.app_stop(self.BRAWL_STARS_PACKAGE)
-        time.sleep(1)
-        self.device.app_start(self.BRAWL_STARS_PACKAGE)
+        self.release_movement()
+        try:
+            self.device.app_stop(self.BRAWL_STARS_PACKAGE)
+            time.sleep(1)
+            self.device.app_start(self.BRAWL_STARS_PACKAGE)
+        except Exception as e:
+            print(f"Could not restart Brawl Stars: {e}")
+            return False
         time.sleep(3)
         print("Brawl stars restarted successfully.")
+        return True
 
     def is_brawl_stars_running(self):
         try:

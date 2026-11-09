@@ -148,20 +148,29 @@ def apply_play_order(queue_data):
 def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
     class Main:
         def __init__(self):
-            current_playstyle = load_toml_as_dict("cfg/bot_config.toml").get("current_playstyle", "default_up.pyla")
             try:
                 self.max_fps = int(load_toml_as_dict("cfg/general_config.toml")['max_fps'])
             except ValueError:
                 self.max_fps = None
 
-            if self.max_fps:
-                self.window_controller = WindowController(self.max_fps)
-            else:
-                self.window_controller = WindowController()
             data = clean_queue(queue_data)
             data = apply_play_order(data)
             if not data:
                 raise ValueError("No valid brawler data found. Please add a brawler configuration in the UI before starting the bot.")
+            if self.max_fps:
+                self.window_controller = WindowController(self.max_fps)
+            else:
+                self.window_controller = WindowController()
+            try:
+                self._finish_init(data)
+            except BaseException:
+                if getattr(self, "state_checker_thread", None):
+                    self.stop_state_checker()
+                self.window_controller.close()
+                raise
+
+        def _finish_init(self, data):
+            current_playstyle = load_toml_as_dict("cfg/bot_config.toml").get("current_playstyle", "default_up.pyla")
             save_brawler_data(data)
             print("Starting with queue data:", data)
             self.playstyle_info, pyla_code = load_pyla_script(current_playstyle)
@@ -179,7 +188,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.max_cached_state_age = 1.0
             self.state_checker_stop_event = threading.Event()
             self.state_checker_thread = None
-            self.update_trophy_observer()
+            self.shut_down = False
 
             self.run_for_minutes = int(load_toml_as_dict("cfg/general_config.toml")['run_for_minutes'])
             self.webhook_ping_every_minutes = load_toml_as_dict("cfg/webhook_config.toml")['ping_every_x_minutes']
@@ -193,16 +202,9 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             discord_bot.set_window_controller(self.window_controller)
             self.start_state_checker()
             print("Initialization complete, starting main loop.")
-            self.picked_first_brawler = False
             self.time_since_checked_if_brawl_stars_crashed = time.time()
             self.check_if_brawl_stars_crashed_timer = load_toml_as_dict("cfg/time_tresholds.toml")["check_if_brawl_stars_crashed"]
             self.ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
-
-        def update_trophy_observer(self):
-            current_brawler_data = self.Stage_manager.brawlers_pick_data[0]
-            self.Stage_manager.Trophy_observer.win_streak = current_brawler_data['win_streak']
-            self.Stage_manager.Trophy_observer.current_trophies = current_brawler_data['trophies']
-            self.Stage_manager.Trophy_observer.current_wins = current_brawler_data['wins'] if current_brawler_data['wins'] != "" else 0
 
         @staticmethod
         def load_models():
@@ -215,8 +217,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
         def restart_brawl_stars(self):
             self.window_controller.restart_brawl_stars()
             self.time_since_checked_if_brawl_stars_crashed = time.time()
-            self.Play.time_since_detections["player"] = time.time()
-            self.Play.time_since_detections["enemy"] = time.time()
+            self.Play.reset_detection_timers()
             if not self.window_controller.is_brawl_stars_running():
                 ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
                 if ping_when_stuck:
@@ -224,9 +225,6 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                     notify_user("bot_is_stuck", screenshot, self.Stage_manager)
                     print("Bot got stuck. User notified.")
                 print("Shutting down.")
-                self.window_controller.release_movement()
-                self.window_controller.close()
-                discord_bot.set_window_controller(None)
                 sys.exit(1)
 
         def should_stop(self):
@@ -247,8 +245,19 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
 
         def stop_gracefully(self):
             cprint("Stop requested from UI - shutting down gracefully", "#AAE5A4")
+            self.shutdown()
+
+        def shutdown(self):
+            """Release every resource of this run; safe to call more than once."""
+            if self.shut_down:
+                return
+            self.shut_down = True
             self.stop_state_checker()
-            self.window_controller.release_movement()
+            try:
+                self.Play.release_held_attack()
+                self.window_controller.release_movement()
+            except Exception as error:
+                print(f"Could not release the controls: {error}")
             self.window_controller.close()
             discord_bot.set_window_controller(None)
 
@@ -282,6 +291,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.set_latest_state(state)
             if state != "match":
                 self.Play.match_logger.stop("state_changed", state)
+                self.Play.release_held_attack()
 
             print(f"State: {state}")
             frame_data = None
@@ -324,6 +334,8 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             if not self.should_stop():
                 self.runtime_control.mark_running()
                 self.time_since_last_webhook_ping = time.time()
+                # Nothing is detected while paused; without this a long pause looks like a stuck game.
+                self.Play.reset_detection_timers()
                 print("Pause released, resuming run.")
 
         def handle_pause_request(self):
@@ -341,7 +353,9 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 t_now = time.time()
                 for key, value in frame_data.items():
                     if t_now - value > self.no_detections_action_threshold:
+                        print(f"No {key} detected for {int(t_now - value)}s, restarting Brawl Stars.")
                         self.restart_brawl_stars()
+                        break
             if self.Time_management.idle_check():
                 self.lobby_automator.check_for_idle(frame)
 
@@ -391,30 +405,6 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                         if self.should_pause():
                             continue
 
-                if not self.picked_first_brawler and self.get_latest_state() == "lobby":
-                    if self.Stage_manager.brawlers_pick_data[0]['automatically_pick']:
-                        next_brawler_name = self.Stage_manager.brawlers_pick_data[0]['brawler']
-                        print("Picking brawler automatically")
-                        if self.runtime_control:
-                            self.runtime_control.mark_running()
-                        select_brawler = self.lobby_automator.select_brawler(next_brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
-
-                        while select_brawler in ["failed", "error"]:
-                            print("Automatic brawler selection failed.")
-                            if self.ping_when_stuck:
-                                screenshot = self.window_controller.screenshot()
-                                notify_user("bot_failed_brawler_selection", screenshot, self.Stage_manager)
-                            failed_brawler = self.Stage_manager.brawlers_pick_data.pop(0)
-                            self.Stage_manager.brawlers_pick_data.append(failed_brawler)
-                            next_brawler_name = self.Stage_manager.brawlers_pick_data[0]['brawler']
-                            select_brawler = self.lobby_automator.select_brawler(next_brawler_name, self.get_latest_state, runtime_control=self.runtime_control)
-
-                        if select_brawler == "aborted" or select_brawler == "stuck":
-                            continue
-                        self.picked_first_brawler = True
-                        self.update_trophy_observer()
-                    else:
-                        self.picked_first_brawler = True
                 t_now = time.time()
                 if self.max_fps:
                     frame_start = time.perf_counter()
@@ -472,7 +462,10 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
 
     os.makedirs("debug_frames", exist_ok=True)
     main = Main()
-    main.main()
+    try:
+        main.main()
+    finally:
+        main.shutdown()
 
 
 all_brawlers = get_brawler_list()
