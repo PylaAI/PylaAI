@@ -1,0 +1,4 @@
+# Keep GitHub's language bar about the code: translation tables and compiled CSS are not hand-written logic.
+static/js/i18n.js linguist-generated=true
+static/js/i18n_es_ko.js linguist-generated=true
+static/css/tailwind.css linguist-generated=true

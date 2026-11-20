@@ -43,7 +43,8 @@ tests/test_scrcpy_protocol.py
 tests/test_touch_randomness.py
 docs/ideas_from_game_code.md
 /recordings
-/docs
+/docs/*
+!/docs/debug_view.png
 /terrain_reports
 *.zip
 *.env
@@ -52,3 +53,5 @@ api/requirements.txt
 api/licensing_bot.py
 api/licensing_backend.py
 .claude/launch.json
+/api/pyla-tg-bot
+/resolution_probe
