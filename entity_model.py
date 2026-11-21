@@ -11,8 +11,11 @@ def read_layout(session):
     keypoints = tuple(ast.literal_eval(metadata.get('kpt_shape', '()')))
     if keypoints and (len(keypoints) != 2 or keypoints[0] < 1 or keypoints[1] not in (2, 3)):
         raise ValueError(f'Unsupported entity keypoint shape: {keypoints}')
-    shape = session.get_inputs()[0].shape
-    size = tuple(shape[2:]) if len(shape) == 4 and all(isinstance(v, int) for v in shape[2:]) else None
+    model_input = session.get_inputs()[0]
+    shape = model_input.shape
+    # uint8 [1, H, W, 3] (model_input.uint8_input_model) or float [1, 3, H, W]
+    hw = shape[1:3] if model_input.type == "tensor(uint8)" else shape[2:]
+    size = tuple(hw) if len(shape) == 4 and all(isinstance(v, int) for v in hw) else None
     return dict(classes=classes, keypoints=keypoints, input_size=size,
                 end_to_end=str(metadata.get('end2end', '')).lower() == 'true')
 

@@ -43,6 +43,10 @@ PATREON_LINK = "https://www.patreon.com/pyla/membership"
 PATREON_LABEL = "www.patreon.com/c/pyla"
 INVALID_PLAYER_TAG_MESSAGE = "Player tag is incorrect. Use your Brawl Stars player tag, not your Supercell ID."
 logger = logging.getLogger(__name__)
+# Dismissed announcement ids, kept by the server: the embedded UI can be served from a different origin/port on a
+# later launch (and desktop webview storage may not persist), which otherwise showed the same announcement every start.
+SEEN_ANNOUNCEMENTS_PARTS = ("cfg", "seen_announcements.json")
+_seen_announcements_lock = threading.Lock()
 
 
 class WebDataService:
@@ -68,6 +72,7 @@ class WebDataService:
 
     DEBUG_FIELDS: dict[str, tuple[str, Any]] = {
         "match_logging": ("bool", False),
+        "press_showdown_exit": ("bool", True),
         "verbose_debug": ("bool", False),
         "state_finder_debug": ("bool", False),
         "re_apply_movement": ("bool", True),
@@ -122,6 +127,9 @@ class WebDataService:
         self.runtime_manager = runtime_manager
         self._latest_version_cache: str | None = None
         self._announcements_cache: list[dict[str, Any]] | None = None
+        # Parsed match history, keyed by everything the payload depends on (see get_match_history_payload).
+        self._history_cache: tuple[tuple, dict[str, Any]] | None = None
+        self._history_cache_lock = threading.Lock()
         self._queue_items: list[dict[str, Any]] = []
         self._runtime_queue_mtime: float | None = None
         self._load_startup_queue_if_enabled()
@@ -256,10 +264,45 @@ class WebDataService:
                 self._announcements_cache = [item for item in received if isinstance(item, dict)]
             except Exception:
                 self._announcements_cache = []
+        seen = set(self._seen_announcement_ids())
         return [
             item for item in self._announcements_cache
             if item.get("audience", "all") in {"all", "non_early_access"}
+            and str(item.get("id")) not in seen
         ]
+
+    @staticmethod
+    def _seen_announcement_ids() -> list[str]:
+        path = resolve_project_path(*SEEN_ANNOUNCEMENTS_PARTS)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                values = json.load(handle)
+        except FileNotFoundError:
+            return []
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("Unable to read %s: %s", path.name, exc)
+            return []
+        return [str(value) for value in values if str(value).strip()] if isinstance(values, list) else []
+
+    def mark_announcement_seen(self, announcement_id: Any) -> dict[str, Any]:
+        """Remember a dismissed announcement id server-side (SEEN_ANNOUNCEMENTS_PARTS), so it is not shown again."""
+        announcement_id = str(announcement_id or "").strip()
+        if not announcement_id:
+            return {"ok": False}
+        path = resolve_project_path(*SEEN_ANNOUNCEMENTS_PARTS)
+        with _seen_announcements_lock:
+            seen = self._seen_announcement_ids()
+            if announcement_id not in seen:
+                seen = (seen + [announcement_id])[-500:]
+                temporary = path.with_name(path.name + ".tmp")
+                try:
+                    with open(temporary, "w", encoding="utf-8") as handle:
+                        json.dump(seen, handle)
+                    temporary.replace(path)
+                except OSError as exc:
+                    logger.warning("Unable to save seen announcement id: %s", exc)
+                    return {"ok": False}
+        return {"ok": True}
 
     def _resolve_brawler_catalog(self) -> list[str]:
         names = get_brawler_list()
@@ -744,6 +787,19 @@ class WebDataService:
         }
         csv_path = resolve_project_path("cfg", "match_history.csv")
 
+        # The UI polls this every ~1 s while a bot runs, in the bot's process: re-parse the CSV only when it changed.
+        # Callers must not mutate the returned payload, it is shared.
+        try:
+            stat = csv_path.stat()
+            file_key = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            file_key = None
+        cache_key = (file_key, session_started_at, start_date, end_date)
+        with self._history_cache_lock:
+            cached = self._history_cache
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
         grouped: dict[str, dict[str, Any]] = {}
 
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -882,6 +938,8 @@ class WebDataService:
             "end_date": end_date.isoformat() if end_date else None,
             "inclusive": True,
         }
+        with self._history_cache_lock:
+            self._history_cache = (cache_key, response)
         return response
 
     @staticmethod

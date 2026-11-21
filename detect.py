@@ -2,8 +2,12 @@ import ast
 import json
 import os
 import threading
+import weakref
+from collections import deque
+from contextlib import contextmanager
 
 from entity_model import decode_pose, read_layout
+from model_input import uint8_input_model
 
 import cv2
 import numpy as np
@@ -11,7 +15,62 @@ import onnxruntime as ort
 from utils import load_toml_as_dict
 import warnings
 
-_dml_lock = threading.Lock()
+# PYLA_FLOAT_MODEL_INPUT=1: give the models float32 input built on the CPU, as before model_input.py (for comparisons).
+UINT8_MODEL_INPUT = os.environ.get("PYLA_FLOAT_MODEL_INPUT") != "1"
+
+
+class GpuTurns:
+    """One lock for every DirectML run in the process, handed out in turns instead of to whichever thread wakes first.
+
+    Required: with per-session locks, 3 instances running at once made DirectML fail ("DmlFusedNode ... 80004005") and
+    fall back to CPU. A plain Lock is not fair: under load one thread kept winning it (one instance ran 376 entity
+    models/s while another got 87). Here waiting runs go first come, first served."""
+
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._busy = False
+        self._waiting = deque()     # tickets in arrival order
+
+    @contextmanager
+    def turn(self):
+        ticket = object()
+        with self._condition:
+            self._waiting.append(ticket)
+            self._condition.wait_for(lambda: not self._busy and self._waiting[0] is ticket)
+            self._waiting.popleft()
+            self._busy = True
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._busy = False
+                self._condition.notify_all()
+
+
+_dml_lock = GpuTurns()
+# Sessions shared by all instances (Detect._shared_session).
+_sessions = weakref.WeakValueDictionary()
+_sessions_lock = threading.Lock()
+_cpu_arena = None       # True once the shared CPU arena is registered, False when this ORT cannot
+_cpu_arena_lock = threading.Lock()  # not _sessions_lock: session factories run while _shared_session holds that one
+
+
+def _shared_cpu_arena():
+    """One CPU memory arena for every CPU session instead of one each. A session's arena keeps its peak for good and
+    grows in powers of two; shared, CPU inference takes much less memory at the same speed (no arena at all saved
+    more but made entity inference 38 % slower). Registered once."""
+    global _cpu_arena
+    with _cpu_arena_lock:
+        if _cpu_arena is None:
+            try:
+                memory = ort.OrtMemoryInfo("Cpu", ort.OrtAllocatorType.ORT_ARENA_ALLOCATOR, 0, ort.OrtMemType.DEFAULT)
+                # max memory 0 (none), extend strategy 0 (next power of two), default chunk sizes
+                ort.create_and_register_allocator(memory, ort.OrtArenaCfg(0, 0, -1, -1))
+                _cpu_arena = True
+            except Exception as exc:
+                print(f"Shared CPU memory arena unavailable ({exc}); each model keeps its own.")
+                _cpu_arena = False
+        return _cpu_arena
 
 _TERRAIN_TILE_CLASSES = ['wall', 'bush', 'rope_fence', 'water', 'out_of_bounds']
 _SEMANTIC_TILE_NAMES = dict(wall='wall', indestructible_wall='wall', fragile='wall',
@@ -185,7 +244,7 @@ class Detect:
         self.input_size = input_size
         self.tile_size = max(1.0, float(tile_size))
         self.model, self.device = self.load_model()
-        self.input_name = self.model.get_inputs()[0].name
+        self._configure_input()
         layout = read_layout(self.model)
         self.keypoint_shape = layout['keypoints']
         self.end_to_end = layout['end_to_end']
@@ -202,17 +261,34 @@ class Detect:
                 manifest = json.load(file)
             self.semantic_names = [manifest['class_ids'][str(i)] for i in range(len(manifest['class_ids']))]
             self.input_size = (manifest['height'], manifest['width'])
-            if self.model.get_inputs()[0].shape != [1, 3, *self.input_size]:
+            expected = [1, *self.input_size, 3] if self.input_u8 else [1, 3, *self.input_size]
+            if self.model.get_inputs()[0].shape != expected:
                 raise ValueError('Semantic model input size does not match its JSON manifest.')
             self.classes = list(_TERRAIN_TILE_CLASSES)
         if self.end2end and "names" in metadata:
             names = ast.literal_eval(metadata["names"])
             self.classes = [names[i] for i in range(len(names))]
-        self._padded_img_buffer = np.full(
-            (1, 3, self.input_size[0], self.input_size[1]),
-            128.0 / 255.0,
-            dtype=np.float32
-        )
+        # Centred letterbox, grey 114 (end-to-end, semantic and pose models); the original models: bottom-right, 128.
+        self.letterbox_center = bool(self.end2end or self.semantic or self.keypoint_shape)
+        self.pad_byte = 114 if self.letterbox_center else 128
+        self.pad_value = self.pad_byte / 255.0
+        self._allocate_input_buffer()
+
+    def _configure_input(self):
+        """Input name and format of the current session: uint8 [1, H, W, 3] (model_input.uint8_input_model) or the
+        model's own float [1, 3, H, W]."""
+        model_input = self.model.get_inputs()[0]
+        self.input_name = model_input.name
+        self.input_u8 = model_input.type == "tensor(uint8)"
+
+    def _allocate_input_buffer(self):
+        """The letterboxed model input, reused for every frame; its padding is (re)filled by preprocess_image."""
+        in_h, in_w = self.input_size
+        if self.input_u8:
+            self._padded_img_buffer = np.full((1, in_h, in_w, 3), self.pad_byte, dtype=np.uint8)
+        else:
+            self._padded_img_buffer = np.full((1, 3, in_h, in_w), self.pad_value, dtype=np.float32)
+        self._last_size = None
 
     def _session_options(self, gpu):
         so = ort.SessionOptions()
@@ -229,11 +305,36 @@ class Detect:
         else:
             so.intra_op_num_threads = self.optimal_threads_amount
             so.inter_op_num_threads = self.optimal_threads_amount
+            if _shared_cpu_arena():
+                so.add_session_config_entry("session.use_env_allocators", "1")
         return so
 
+    def _create_session(self, sess_options, providers):
+        """InferenceSession of the model taking the frame's bytes (model_input.uint8_input_model) when the model allows
+        it, else of the model as it is."""
+        wrapped = uint8_input_model(self.model_path) if UINT8_MODEL_INPUT else None
+        if wrapped is not None:
+            try:
+                return ort.InferenceSession(wrapped[0], sess_options=sess_options, providers=providers)
+            except Exception as exc:
+                print(f"{os.path.basename(self.model_path)}: uint8 input unavailable ({exc}), using float input.")
+        return ort.InferenceSession(self.model_path, sess_options=sess_options, providers=providers)
+
+    def _shared_session(self, provider, factory):
+        """One session per model, provider and thread setting for the whole process, shared by every instance
+        (and by its CPU fallback): each costs a few hundred MB of RAM. Runs on one session are thread-safe on CPU and
+        CUDA, and DirectML runs are serialised by _dml_lock anyway. A session is released once no Detect uses it."""
+        key = (os.path.abspath(self.model_path), provider, self.optimal_threads_amount)
+        with _sessions_lock:
+            session = _sessions.get(key)
+            if session is None:
+                session = factory()
+                _sessions[key] = session
+            return session
+
     def _cpu_session(self):
-        return ort.InferenceSession(self.model_path, sess_options=self._session_options(False),
-                                    providers=["CPUExecutionProvider"])
+        return self._shared_session("CPUExecutionProvider", lambda: self._create_session(
+            self._session_options(False), ["CPUExecutionProvider"]))
 
     def load_model(self):
         available_providers = ort.get_available_providers()
@@ -250,8 +351,8 @@ class Detect:
             return self._cpu_session(), onnx_provider
 
         try:
-            model = ort.InferenceSession(self.model_path, sess_options=self._session_options(True),
-                                         providers=[onnx_provider, "CPUExecutionProvider"])
+            model = self._shared_session(onnx_provider, lambda: self._create_session(
+                self._session_options(True), [onnx_provider, "CPUExecutionProvider"]))
         except Exception as e:
             print(f"Failed to initialize GPU provider {onnx_provider}: {e}. Falling back to CPU.")
             return self._cpu_session(), "CPUExecutionProvider"
@@ -267,31 +368,39 @@ class Detect:
         return model, active
 
     def preprocess_image(self, img):
+        """Letterbox a frame into the model input, written straight into the reused input buffer:
+        (input, new_w, new_h). A uint8 input only takes the resized pixels; the model itself scales them to 0..1 and
+        puts the channels first (model_input.py)."""
         h, w = img.shape[:2]
-
-        scale = min(self.input_size[0] / h, self.input_size[1] / w)
+        in_h, in_w = self.input_size
+        scale = min(in_h / h, in_w / w)
         new_w = int(w * scale)
         new_h = int(h * scale)
         pad_x = pad_y = 0
-        if self.end2end or self.semantic or self.keypoint_shape:
+        if self.letterbox_center:
             new_w, new_h = round(w * scale), round(h * scale)
-            pad_x = (self.input_size[1] - new_w) // 2
-            pad_y = (self.input_size[0] - new_h) // 2
-            self._padded_img_buffer.fill(114.0 / 255.0)
+            pad_x = (in_w - new_w) // 2
+            pad_y = (in_h - new_h) // 2
+        if self._last_size != (w, h):
+            # Padding only changes with the source size; content always overwrites the same region.
+            self._padded_img_buffer.fill(self.pad_byte if self.input_u8 else self.pad_value)
+            self._last_size = (w, h)
 
-        resized_img = cv2.resize(
-            img,
-            (new_w, new_h),
-            interpolation=cv2.INTER_LINEAR
+        if self.input_u8:
+            region = self._padded_img_buffer[0, pad_y:pad_y + new_h, pad_x:pad_x + new_w]
+            resized_img = cv2.resize(img, (new_w, new_h), dst=region, interpolation=cv2.INTER_LINEAR)
+            if not np.may_share_memory(resized_img, region):    # OpenCV could not write into the view
+                region[...] = resized_img
+            return self._padded_img_buffer, new_w, new_h
+
+        resized_img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        # HWC uint8 -> CHW float32 scaled to [0, 1], written straight into the padded input in one pass.
+        np.multiply(
+            resized_img.transpose(2, 0, 1),
+            np.float32(1.0 / 255.0),
+            out=self._padded_img_buffer[0, :, pad_y:pad_y + new_h, pad_x:pad_x + new_w],
+            casting="unsafe",
         )
-
-        img_float = resized_img.astype(np.float32, copy=True)
-        np.multiply(img_float, 1.0 / 255.0, out=img_float)
-
-        self._padded_img_buffer[0, 0, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 0]
-        self._padded_img_buffer[0, 1, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 1]
-        self._padded_img_buffer[0, 2, pad_y:pad_y + new_h, pad_x:pad_x + new_w] = img_float[:, :, 2]
-
         return self._padded_img_buffer, new_w, new_h
 
     def postprocess(self, raw_output, orig_img_shape, resized_shape, conf_tresh=0.6):
@@ -388,7 +497,7 @@ class Detect:
 
         try:
             if self.device == "DmlExecutionProvider":
-                with _dml_lock:
+                with _dml_lock.turn():
                     outputs = self.model.run(
                         None,
                         {self.input_name: preprocessed_img}
@@ -403,7 +512,18 @@ class Detect:
                 print(f"ONNX Runtime inference failed on {self.device}: {e}. Re-initializing model on CPU...")
                 self.device = "CPUExecutionProvider"
                 self.model = self._cpu_session()
-                self.input_name = self.model.get_inputs()[0].name
+                was_u8 = self.input_u8
+                self._configure_input()
+                if self.input_u8 != was_u8:
+                    # The CPU session takes the other input format (never expected): convert this frame's input and
+                    # build the next frames' in that format.
+                    if self.input_u8:
+                        preprocessed_img = np.ascontiguousarray(
+                            np.rint(preprocessed_img * 255.0).clip(0, 255).astype(np.uint8).transpose(0, 2, 3, 1))
+                    else:
+                        preprocessed_img = np.ascontiguousarray(
+                            preprocessed_img.transpose(0, 3, 1, 2)).astype(np.float32) * np.float32(1.0 / 255.0)
+                    self._allocate_input_buffer()
                 outputs = self.model.run(
                     None,
                     {self.input_name: preprocessed_img}

@@ -21,6 +21,31 @@ from .const import (
 from .control import ControlSender
 
 
+def push_file(device: AdbDevice, local_path: str, remote_path: str, mode: int = 0o755) -> None:
+    """Push a file to exactly remote_path, then check its size on the device.
+
+    adbutils' sync.push first STATs the target and pushes into it when the answer looks like a folder. MuMu's Android
+    15 image answers that for a path that does not exist yet, so a first push went to remote_path/<name> and adbd
+    created a folder at remote_path: the scrcpy server then aborted on every start (ClassNotFoundException, "server
+    exited: Aborted") and the test apps failed to install. So the file is sent to the exact path (no STAT), a folder
+    left there by an older push is moved aside first, and the result is checked through the shell, not STAT."""
+    size = os.path.getsize(local_path)
+    backup = f"{remote_path}.folder-{int(time.time())}"
+    moved = device.shell(f"if [ -d '{remote_path}' ]; then mv '{remote_path}' '{backup}' && echo moved; fi").strip()
+    if moved == "moved":
+        print(f"{remote_path} was a folder on the device (left by an older push); moved it to {backup}.")
+    send = getattr(device.sync, "_push_file", None)     # adbutils' push without the STAT
+    if send is not None:
+        send(local_path, remote_path, mode, False)
+    else:
+        device.sync.push(local_path, remote_path, mode=mode)
+    pushed = device.shell(f"if [ -f '{remote_path}' ]; then wc -c < '{remote_path}'; fi").strip()
+    if pushed != str(size):
+        kind = "a folder" if device.shell(f"[ -d '{remote_path}' ] && echo dir").strip() == "dir" else             f"{pushed or 'missing'} bytes"
+        raise ConnectionError(f"Pushing {os.path.basename(local_path)} failed: {remote_path} on the device is {kind}, "
+                              f"expected a {size}-byte file. Delete it with: adb shell rm -r {remote_path}")
+
+
 class Client:
     def __init__(
         self,
@@ -146,7 +171,7 @@ class Client:
         server_file_path = os.path.join(
             os.path.abspath(os.path.dirname(__file__)), jar_name
         )
-        self.device.sync.push(server_file_path, f"/data/local/tmp/{jar_name}")
+        push_file(self.device, server_file_path, f"/data/local/tmp/{jar_name}")
         commands = [
             f"CLASSPATH=/data/local/tmp/{jar_name}",
             "app_process",

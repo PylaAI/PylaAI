@@ -103,7 +103,9 @@ def find_game_result(screenshot):
     return False
 
 
-def get_in_game_state(image):
+def get_in_game_state(image, playing=False):
+    """playing: the player is on screen in a match, so only the end of the match can come next (the other screens
+    are not checked; the caller still runs a full check now and then)."""
     global last_debug_print_time, should_print_debug_info
     state_finder_debug = config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('state_finder_debug'), False)
     current_time = time.time()
@@ -115,6 +117,7 @@ def get_in_game_state(image):
         if should_print_debug_info: print("Checking for match result...")
         game_result = is_in_end_of_a_match(image)
         if game_result: return f"end_{game_result}"
+        if playing: return "match"
         if should_print_debug_info: print("Checking for loading screen...")
         if is_in_loading_screen(image): return "loading"
         if should_print_debug_info: print("Checking for lobby...")
@@ -144,9 +147,12 @@ def get_in_game_state(image):
         if should_print_debug_info: print("Checking for trophy reward...")
         if is_in_trophy_reward(image):
             return "trophy_reward"
-        # Last: the gamemode is not known here, and only Showdown shows this button.
-        if should_print_debug_info: print("Checking for showdown exit...")
-        if is_in_showdown_exit(image): return "exit_showdown"
+        # Last: the gamemode is not known here, and only Showdown shows this button. press_showdown_exit (debug
+        # setting, default on): off skips it, e.g. in friendly matches, whose in-match Exit button looks the same and
+        # would end the match.
+        if press_showdown_exit():
+            if should_print_debug_info: print("Checking for showdown exit...")
+            if is_in_showdown_exit(image): return "exit_showdown"
 
         return "match"
     finally:
@@ -221,12 +227,17 @@ def is_in_friend_menu(image):
     return is_template_in_region(image, states_path + "friend_menu_icon.png", region_data['friend_menu_icon'])
 
 
+def press_showdown_exit():
+    """Debug setting press_showdown_exit; on when missing (configs older than the setting)."""
+    return config_bool(load_toml_as_dict("cfg/debug_settings.toml").get("press_showdown_exit"), True)
+
+
 def is_in_showdown_exit(image):
     """The Exit button shown after dying in Showdown, while the match goes on without the player."""
     return is_template_in_region(image, states_path + "exit_outline.png", region_data['showdown_exit'])
 
 
-def get_state(screenshot):
-    state = get_in_game_state(screenshot)
+def get_state(screenshot, playing=False):
+    state = get_in_game_state(screenshot, playing)
     if config_bool(load_toml_as_dict("cfg/debug_settings.toml").get('state_finder_debug'), False): cv2.imwrite(f"./debug_frames/state_screenshot_{state}_{len(os.listdir('./debug_frames'))}.png", cv2.cvtColor(screenshot, cv2.COLOR_BGR2RGB))
     return state

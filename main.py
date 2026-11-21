@@ -1,3 +1,8 @@
+from process_tuning import tune_process
+
+# Before anything imports numpy (its BLAS reserves memory per thread at import), and before the bot's threads start.
+tune_process()
+
 import argparse
 import inspect
 import os
@@ -63,6 +68,26 @@ def parse_cli_args(argv=None):
         action="store_const",
         const="headless",
         help="Force headless mode: serve the local web UI without opening it.",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Test the emulator delay and this PC's processing, print the report and exit.",
+    )
+    parser.add_argument(
+        "--frame-age",
+        action="store_true",
+        help="With --benchmark: also measure the one-way frame age (installs a small test app for the test).",
+    )
+    parser.add_argument(
+        "--input-latency",
+        action="store_true",
+        help="With --benchmark: also measure the touch input latency (installs a small test app for the test).",
+    )
+    parser.add_argument(
+        "--ping",
+        action="store_true",
+        help="With --benchmark: also measure the round trip to the Brawl Stars game server (TCP handshakes, no data).",
     )
     args, _unknown_args = parser.parse_known_args(argv)
     return args
@@ -145,6 +170,31 @@ def apply_play_order(queue_data):
     return ordered_data
 
 
+# Screen state checks (state_checker_loop): seconds between checks, and how often a full check runs while playing.
+STATE_CHECK_INTERVAL = 0.1
+STATE_CHECK_INTERVAL_PLAYING = 0.3
+STATE_CHECK_INTERVAL_MENUS = 0.5
+PLAYER_SEEN_SECONDS = 1.0
+FULL_STATE_CHECK_SECONDS = 2.0
+
+
+class ForegroundAppCheck(threading.Thread):
+    """One ADB query of the foreground app; result: (package, is it Brawl Stars, error or None)."""
+
+    def __init__(self, window_controller):
+        super().__init__(daemon=True, name="pyla-app-check")
+        self.window_controller = window_controller
+        self.result = (None, True, None)
+        self.start()
+
+    def run(self):
+        try:
+            opened_app = self.window_controller.device.app_current().package.strip()
+            self.result = (opened_app, self.window_controller.is_brawl_stars_package(opened_app), None)
+        except Exception as exc:  # AdbError and friends: handled by reconnecting, as a failed check always was
+            self.result = (None, False, exc)
+
+
 def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
     class Main:
         def __init__(self):
@@ -179,6 +229,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.max_cached_state_age = 1.0
             self.state_checker_stop_event = threading.Event()
             self.state_checker_thread = None
+            self._app_check = None
             self.update_trophy_observer()
 
             self.run_for_minutes = int(load_toml_as_dict("cfg/general_config.toml")['run_for_minutes'])
@@ -291,6 +342,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
 
         def state_checker_loop(self):
             last_checked_frame_time = 0.0
+            last_full_check = 0.0
             while not self.state_checker_stop_event.is_set():
                 frame, frame_time = self.window_controller.get_latest_frame()
                 if frame is None or frame_time <= last_checked_frame_time:
@@ -298,11 +350,34 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                     continue
 
                 last_checked_frame_time = frame_time
+                # While the player is played only the end screen can come next, so the other screens are skipped,
+                # except in one check every FULL_STATE_CHECK_SECONDS (a screen that covers a visible player).
+                now = time.time()
+                end_screen_only = self.is_playing() and now - last_full_check < FULL_STATE_CHECK_SECONDS
+                if not end_screen_only:
+                    last_full_check = now
                 try:
-                    self.set_latest_state(get_state(frame))
+                    self.set_latest_state(get_state(frame, playing=end_screen_only))
                 except Exception as e:
                     print(f"State checker failed: {e}")
-                self.state_checker_stop_event.wait(0.1)
+                self.state_checker_stop_event.wait(self.state_check_interval())
+
+        def is_playing(self):
+            """In a match with the player seen within PLAYER_SEEN_SECONDS."""
+            play = getattr(self, "Play", None)
+            return (play is not None and self.get_latest_state() == "match"
+                    and time.time() - play.time_since_player_last_found < PLAYER_SEEN_SECONDS)
+
+        def state_check_interval(self):
+            """Seconds between screen state checks: less often while the player is being played, when only the end
+            of the match has to be noticed, and on recognised menu screens (lobby, matchmaking, end screens, ...),
+            where noticing the next screen up to half a second later costs nothing. A match without the player
+            (loading, dead) keeps the fast checks so the end screen is seen at once."""
+            if self.is_playing():
+                return STATE_CHECK_INTERVAL_PLAYING
+            if self.get_latest_state() not in (None, "match"):
+                return STATE_CHECK_INTERVAL_MENUS
+            return STATE_CHECK_INTERVAL
 
         def wait_while_paused(self):
             if not self.runtime_control:
@@ -353,22 +428,29 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 print(f"Sent regular webhook ping after {self.webhook_ping_every_minutes} minutes.")
 
         def check_and_handle_brawl_stars_crash(self):
+            """Every check_if_brawl_stars_crashed seconds, ask ADB which app is in front, and restart Brawl Stars when
+            it is not. The query runs on its own thread: it takes 150-350 ms on emulators, a freeze the frame loop
+            used to sit through every few seconds. Its answer is handled here on a later frame."""
+            check = self._app_check
+            if check is not None and not check.is_alive():
+                self._app_check = None
+                self.handle_foreground_app(*check.result)
             c_time = time.time()
-            if c_time - self.time_since_checked_if_brawl_stars_crashed > self.check_if_brawl_stars_crashed_timer:
-                try:
-                    opened_app = self.window_controller.device.app_current().package.strip()
-                    if not self.window_controller.is_brawl_stars_running():
-                        print(f"Brawl stars has crashed, {opened_app} is the app opened ! Restarting...")
-                        self.window_controller.device.app_start(self.window_controller.BRAWL_STARS_PACKAGE)
-                        time.sleep(3)
-                        self.time_since_checked_if_brawl_stars_crashed = time.time()
-                    else:
-                        self.time_since_checked_if_brawl_stars_crashed = c_time
-                except AdbError:
-                    print("There was an error checking if Brawl Stars is running. Attempting to reconnect scrcpy...")
-                    if not self.window_controller.reconnect_scrcpy():
-                        print("Reconnect failed -- restarting Brawl Stars")
-                        self.restart_brawl_stars()
+            if self._app_check is None and c_time - self.time_since_checked_if_brawl_stars_crashed > self.check_if_brawl_stars_crashed_timer:
+                self.time_since_checked_if_brawl_stars_crashed = c_time
+                self._app_check = ForegroundAppCheck(self.window_controller)
+
+        def handle_foreground_app(self, opened_app, is_brawl_stars, error):
+            if error is not None:
+                print("There was an error checking if Brawl Stars is running. Attempting to reconnect scrcpy...")
+                if not self.window_controller.reconnect_scrcpy():
+                    print("Reconnect failed -- restarting Brawl Stars")
+                    self.restart_brawl_stars()
+            elif not is_brawl_stars:
+                print(f"Brawl stars has crashed, {opened_app} is the app opened ! Restarting...")
+                self.window_controller.device.app_start(self.window_controller.BRAWL_STARS_PACKAGE)
+                time.sleep(3)
+                self.time_since_checked_if_brawl_stars_crashed = time.time()
 
         def main(self):
             s_time = time.time()
@@ -539,6 +621,13 @@ def run_interface(app, local_url, interface_mode):
         print(f"PylaAI is running headless. Open {local_url} manually to use the local web UI.")
 
     app.run(host="127.0.0.1", port=int(local_url.rsplit(":", 1)[1]), debug=False, use_reloader=False)
+
+if __name__ == "__main__" and CLI_ARGS.benchmark:
+    from benchmark import format_report, run_benchmark
+
+    print(format_report(run_benchmark(frame_age=CLI_ARGS.frame_age, input_latency=CLI_ARGS.input_latency,
+                                      ping=CLI_ARGS.ping)))
+    sys.exit(0)
 
 if __name__ == "__main__":
     print("Starting PylaAI, the best free and open source brawl stars bot")

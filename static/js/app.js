@@ -150,6 +150,7 @@ const SETTINGS_META = {
         { key: "auto_load_queue_on_startup", label: "Load Queue On Startup", type: "checkbox", help: "Load the latest saved queue when the web UI starts." },
     ],
     debug: [
+        { key: "press_showdown_exit", label: "Press Showdown Exit", type: "checkbox", help: "Press Exit when the player is out of a Showdown match. Turn off for friendly matches: their in-match Exit button looks the same and the bot would leave the match." },
         { key: "match_logging", label: "Match Logging", type: "checkbox", help: "Save compressed match diagnostics in match_logs. Restart the bot after changing this setting." },
         { key: "verbose_debug", label: "Verbose Debug", type: "checkbox", help: "Enable extra runtime debugging output." },
         { key: "state_finder_debug", label: "State Finder Debug", type: "checkbox", help: "Enable state finder logging output." },
@@ -467,6 +468,13 @@ function showPendingAnnouncements() {
     const dismiss = () => {
         seen.add(String(announcement.id));
         setStorageItem("pylaSeenAnnouncements", JSON.stringify([...seen].slice(-200)));
+        // Persist server-side too: desktop webview storage can reset between launches,
+        // so this is what reliably keeps a dismissed announcement from returning.
+        fetchJSON("/api/announcements/seen", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: announcement.id }),
+        }, true).catch(() => {});
         document.getElementById("announcementModal")?.remove();
         showPendingAnnouncements();
     };
@@ -499,6 +507,7 @@ function renderDashboard() {
         </button>
         <p class="runtime-note ${runtime.state === "error" ? "runtime-error" : ""}">${escapeHtml(statusCopy)}</p>
         ${!queue.length ? '<button id="goToBrawlersBtn" class="btn" style="margin-top: 12px;">Go to Brawlers</button>' : ''}
+        <button id="benchmarkBtn" class="btn btn-sm" type="button" style="margin-top: 12px;" data-tooltip="Measures the emulator's delay, the capture frame rate and this PC's processing, to tell whether lag comes from the emulator or from the bot.">Test emulator delay</button>
     `;
 
     if (runtime.state === "stopping") {
@@ -1998,7 +2007,152 @@ function renderQueueStrip(queue) {
 
 
 
+const BENCHMARK_RATING_COLORS = { good: "var(--success)", fair: "#facc15", slow: "var(--error)" };
+
+function openBenchmarkModal() {
+    document.getElementById("benchmarkModal")?.remove();
+    document.body.insertAdjacentHTML("beforeend", `
+        <div id="benchmarkModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="benchmarkTitle" style="z-index: 350;">
+            <section class="modal" style="max-width: 640px;">
+                <header class="modal-header">
+                    <p class="eyebrow">Performance check</p>
+                    <h3 id="benchmarkTitle">Emulator delay test</h3>
+                    <p style="margin-top: 10px; line-height: 1.6;">Keep Brawl Stars open on the emulator (the lobby is fine). Android's notification shade opens and closes a few times; nothing in the game is touched. It takes about a minute.</p>
+                </header>
+                <div id="benchmarkBody" style="margin-top: 16px;">
+                    <p class="meta" style="margin-bottom: 8px;">Also measure (the two test apps are tiny, installed on the emulator for a few seconds and removed afterwards):</p>
+                    <label style="display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; cursor: pointer; margin-bottom: 8px;">
+                        <input id="benchmarkFrameAge" type="checkbox" checked style="margin-top: 4px;">
+                        <span><strong>Frame age</strong>: how old each frame is when Pyla gets it (test app 1).</span>
+                    </label>
+                    <label style="display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; cursor: pointer; margin-bottom: 8px;">
+                        <input id="benchmarkInputLatency" type="checkbox" checked style="margin-top: 4px;">
+                        <span><strong>Touch reaction</strong>: how long a tap or swipe sent by Pyla takes to reach Android (test app 2).</span>
+                    </label>
+                    <label style="display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; cursor: pointer;">
+                        <input id="benchmarkPing" type="checkbox" checked style="margin-top: 4px;">
+                        <span><strong>Network ping</strong>: round trips to the Brawl Stars game server. Nothing is installed and no game data is sent.</span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                    <button id="startBenchmarkBtn" class="btn btn-primary" type="button">Start test</button>
+                    <button id="closeBenchmarkBtn" class="btn" type="button">Close</button>
+                </div>
+            </section>
+        </div>
+    `);
+    document.getElementById("closeBenchmarkBtn")?.addEventListener("click", () => {
+        clearTimeout(pollBenchmark.timer);
+        document.getElementById("benchmarkModal")?.remove();
+    });
+    document.getElementById("startBenchmarkBtn")?.addEventListener("click", (event) => {
+        const options = {
+            frame_age: Boolean(document.getElementById("benchmarkFrameAge")?.checked),
+            input_latency: Boolean(document.getElementById("benchmarkInputLatency")?.checked),
+            ping: Boolean(document.getElementById("benchmarkPing")?.checked),
+        };
+        event.currentTarget.remove();
+        startBenchmark(options);
+    });
+}
+
+async function startBenchmark(options) {
+    const body = document.getElementById("benchmarkBody");
+    if (!body) return;
+    body.innerHTML = `<p class="runtime-note">Starting…</p>`;
+    const started = await fetchJSON("/api/benchmark/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options),
+    }, true);
+    if (!started || started.ok === false) {
+        body.innerHTML = `<p class="runtime-note runtime-error">${escapeHtml(started?.message || "The emulator test could not start.")}</p>`;
+        return;
+    }
+    body.innerHTML = renderBenchmark(started.benchmark);
+    pollBenchmark.timer = setTimeout(pollBenchmark, 700);
+}
+
+async function pollBenchmark() {
+    const body = document.getElementById("benchmarkBody");
+    if (!body) return;
+    const status = await fetchJSON("/api/benchmark/status", { cache: "no-store" }, true);
+    const job = status?.benchmark;
+    body.innerHTML = renderBenchmark(job);
+    if (job?.running) pollBenchmark.timer = setTimeout(pollBenchmark, 700);
+}
+
+function renderBenchmark(job) {
+    if (!job) return `<p class="runtime-note">Starting…</p>`;
+    if (job.error) return `<p class="runtime-note runtime-error">${escapeHtml(job.error)}</p>`;
+    if (job.running || !job.result) {
+        const steps = (job.progress || []).map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+        return `<ul style="margin: 0; padding-left: 18px; line-height: 1.8;">${steps || "<li>Starting…</li>"}</ul>`;
+    }
+    const result = job.result;
+    const ratings = result.verdict?.ratings || {};
+    const row = (label, rating, value) => `
+        <div style="display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border-light);">
+            <span>${label}</span>
+            <span style="text-align: right;">${value}${rating ? ` <strong style="color: ${BENCHMARK_RATING_COLORS[rating] || "inherit"}; margin-left: 6px;">${rating}</strong>` : ""}</span>
+        </div>`;
+    const capture = result.capture || {};
+    const delay = result.emulator_delay || {};
+    const processing = result.processing || {};
+    const ms = (value) => `${Math.round(value)} ms`;
+    const rows = [
+        row("Emulator delay (action → seen)", ratings.emulator_delay, delay.ok
+            ? `${ms(delay.delay_ms.median)} <span class="meta">(p90 ${ms(delay.delay_ms.p90)})</span>`
+            : `<span class="meta">${escapeHtml(delay.reason || "not measured")}</span>`),
+        row("Capture", ratings.capture, capture.ok
+            ? `${Math.round(capture.fps)} fps <span class="meta">(longest gap ${ms(capture.gap_ms.max)})</span>`
+            : `<span class="meta">${escapeHtml(capture.reason || "not measured")}</span>`),
+        row("Bot processing per frame", ratings.bot_processing, processing.ok
+            ? `${ms(processing.frame_ms)} on ${escapeHtml(processing.device)} <span class="meta">(up to ${Math.round(processing.max_fps)} fps)</span>`
+            : `<span class="meta">${escapeHtml(processing.reason || "not measured")}</span>`),
+    ];
+    const frameAge = result.frame_age;
+    if (frameAge) {
+        rows.splice(1, 0, row("Frame age (drawn → received)", ratings.frame_age, frameAge.ok
+            ? `${ms(frameAge.age_ms.median)} <span class="meta">(p90 ${ms(frameAge.age_ms.p90)})</span>`
+            : `<span class="meta">${escapeHtml(frameAge.reason || "not measured")}</span>`));
+    }
+    const tenth = (value) => `${Number(value).toFixed(1)} ms`;
+    if (capture.ok && capture.changed_fps !== undefined) {
+        const captureIndex = rows.findIndex((item) => item.includes(">Capture<"));
+        rows.splice(captureIndex + 1, 0, row("Game frame rate", "", `${Math.round(capture.changed_fps)} fps <span class="meta">(frames that change on screen)</span>`));
+    }
+    const latency = result.input_latency;
+    if (latency) {
+        rows.push(row("Touch reaction (Pyla → Android)", "", latency.ok
+            ? `${tenth(latency.input_ms.median)} <span class="meta">(p90 ${tenth(latency.input_ms.p90)}, ${escapeHtml(latency.touch)} touch)</span>`
+            : `<span class="meta">${escapeHtml(latency.reason || "not measured")}</span>`));
+    }
+    const ping = result.ping;
+    if (ping) {
+        rows.push(row("Network ping (game server)", "", ping.ok
+            ? `${ms(ping.rtt_ms.median)} <span class="meta">(p90 ${ms(ping.rtt_ms.p90)})</span>`
+            : `<span class="meta">${escapeHtml(ping.reason || "not measured")}</span>`));
+    }
+    const split = result.verdict?.delay_split;
+    const splitCopy = split
+        ? `<p class="meta" style="margin-top: 10px;">Of the emulator delay, about ${ms(split.frame_age_ms)} is frame age and ${ms(split.input_and_drawing_ms)} is the input reaching the emulator and it drawing the result.</p>`
+        : "";
+    const notes = (result.verdict?.notes || []).map((note) => `<p class="meta" style="margin-top: 10px;">${escapeHtml(note)}</p>`).join("");
+    const tips = (result.verdict?.tips || []).map((tip) => `<li>${escapeHtml(tip)}</li>`).join("");
+    return `
+        <p class="meta" data-i18n-skip>${escapeHtml(result.backend)} capture · ${escapeHtml(result.touch || "scrcpy")} touch · ${result.resolution?.[0]}x${result.resolution?.[1]} · ${escapeHtml(result.device)}</p>
+        <div style="margin-top: 8px;">${rows.join("")}</div>
+        ${splitCopy}
+        <p style="margin-top: 16px; font-weight: 600;">${escapeHtml(result.verdict?.summary || "")}</p>
+        ${notes}
+        ${tips ? `<ul style="margin: 10px 0 0; padding-left: 18px; line-height: 1.7;">${tips}</ul>` : ""}
+    `;
+}
+
 function bindRuntimeButtons() {
+    document.getElementById("benchmarkBtn")?.addEventListener("click", openBenchmarkModal);
+
     const startOrResume = async () => {
         const result = await fetchJSON("/api/runtime/start", { method: "POST" }, true);
         if (!result.ok) {

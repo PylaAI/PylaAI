@@ -494,7 +494,10 @@ class Play:
 
         return result
 
-    def get_main_data(self, frame):
+    def get_main_data(self, frame, detect=True):
+        """Entity detections of the frame; detect=False (a recognised menu screen): the model does not run."""
+        if not detect:
+            return {}
         data = self.Detect_main_info.detect_objects(frame, conf_tresh=self.entity_detection_confidence)
         return data
 
@@ -801,8 +804,16 @@ class Play:
         if state == "match" and self.match_logger.enabled and not self.match_logger.active:
             self.match_logger.start({"brawler": brawler, "resolution": list(frame.shape[:2]),
                                      "playstyle": main.Stage_manager.playstyle_info})
-        data = self.get_main_data(frame)
-        if current_time - self.time_since_walls_checked > self.walls_treshold:
+        # A screen the state checker recognised (lobby, matchmaking, end screen, ...): there is nothing to play, and
+        # what the models found would be thrown away below, so they do not run. "match" is also the state of any
+        # screen no template matches (loading, VS), where everything still runs.
+        recognised_screen = state is not None and state != "match"
+        data = self.get_main_data(frame, detect=not recognised_screen)
+        # Walls are only used while the player is played: not updated once it has been missing for a second (dead,
+        # spectating, loading); a player seen on this frame updates them at once.
+        player_present = bool(data.get("player")) or current_time - self.time_since_player_last_found < 1.0
+        if (not recognised_screen and player_present
+                and current_time - self.time_since_walls_checked > self.walls_treshold):
             tile_data = self.get_tile_data(frame, data.get("player"))
             walls, bushes, water, rope_fence = self.process_tile_data(tile_data)
             self.time_since_walls_checked = current_time

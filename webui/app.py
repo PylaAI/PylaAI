@@ -177,6 +177,11 @@ def create_app(pyla_main, start_discord_bot=False):
     def bootstrap():
         return jsonify(data_service.get_bootstrap_payload())
 
+    @app.post("/api/announcements/seen")
+    def announcement_seen():
+        payload = request.get_json(silent=True) or {}
+        return jsonify(data_service.mark_announcement_seen(payload.get("id")))
+
     @app.errorhandler(KeyError)
     @app.errorhandler(FileNotFoundError)
     @app.errorhandler(ValueError)
@@ -277,8 +282,35 @@ def create_app(pyla_main, start_discord_bot=False):
     def reset_settings(section: str):
         return jsonify(data_service.reset_settings(section))
 
+    # Emulator test (benchmark.py): it uses the emulator like a bot run, so the two never run together.
+    benchmark_job = {}
+
+    def benchmark_running():
+        job = benchmark_job.get("job")
+        return job is not None and job.running
+
+    @app.post("/api/benchmark/start")
+    def benchmark_start():
+        if runtime_manager.get_status().get("is_running"):
+            return jsonify({"ok": False, "message": "Stop Pyla before testing the emulator."}), 409
+        if not benchmark_running():
+            from benchmark import BenchmarkJob
+            payload = request.get_json(silent=True) or {}
+            benchmark_job["job"] = BenchmarkJob(frame_age=payload.get("frame_age") is True,
+                                                input_latency=payload.get("input_latency") is True,
+                                                ping=payload.get("ping") is True)
+        return jsonify({"ok": True, "benchmark": benchmark_job["job"].status()})
+
+    @app.get("/api/benchmark/status")
+    def benchmark_status():
+        job = benchmark_job.get("job")
+        return jsonify({"ok": True, "benchmark": job.status() if job else None})
+
     @app.post("/api/runtime/start")
     def runtime_start():
+        if benchmark_running():
+            return jsonify({"ok": False, "message": "Wait for the emulator test to finish before starting Pyla.",
+                            "runtime": runtime_manager.get_status()}), 409
         result = runtime_manager.start_current_queue(discord_bot)
         if result.get("ok"):
             status_code = 200

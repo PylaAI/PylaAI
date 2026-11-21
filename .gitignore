@@ -27,6 +27,7 @@ pyla-v0.9.4.zip
 test3.py
 texts.csv
 cfg/instances_config.json
+cfg/seen_announcements.json
 cfg/default/match_history.csv
 pyla-v0.9.6.zip
 api/namcheap_app.py

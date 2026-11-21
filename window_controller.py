@@ -137,6 +137,9 @@ class WindowController:
             print(f"Connected to device: {self.device.serial}")
 
             self.frame_lock = threading.Lock()
+            # Notified with each new frame (wait_for_new_frame); shares frame_lock.
+            self.frame_condition = threading.Condition(self.frame_lock)
+            self.last_frame_received_at = 0.0
             self.max_fps = max_fps
             self.scrcpy_client = scrcpy.Client(device=self.device, max_width=0, bitrate=10000000) if self.max_fps == "auto" else scrcpy.Client(device=self.device, max_width=0, bitrate=10000000, max_fps=self.max_fps)
             self.last_frame = None
@@ -151,9 +154,11 @@ class WindowController:
 
             def on_frame(frame):
                 if frame is not None:
-                    with self.frame_lock:
+                    with self.frame_condition:
                         self.last_frame = frame
                         self.last_frame_time = time.time()
+                        self.last_frame_received_at = time.perf_counter()
+                        self.frame_condition.notify_all()
 
             self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, on_frame)
             self.scrcpy_client.start(threaded=True)
@@ -171,6 +176,20 @@ class WindowController:
             if self.last_frame is None:
                 return None, 0.0
             return self.last_frame, self.last_frame_time
+
+    def wait_for_new_frame(self, last_received_at, timeout=0.1):
+        """Block until a frame newer than last_received_at arrives; False on timeout."""
+        with self.frame_condition:
+            return self.frame_condition.wait_for(
+                lambda: self.last_frame is not None and self.last_frame_received_at != last_received_at,
+                timeout=timeout,
+            )
+
+    def screenshot_with_timing(self):
+        """The latest frame, its arrival time (perf_counter) and its Android timestamp (not read here: None)."""
+        self.screenshot()
+        with self.frame_lock:
+            return self.last_frame, self.last_frame_received_at, None
 
     def force_rediscover(self) -> bool:
         print("Restarting ADB server and re-discovering device.")
@@ -213,9 +232,11 @@ class WindowController:
 
             def on_frame(frame):
                 if frame is not None:
-                    with self.frame_lock:
+                    with self.frame_condition:
                         self.last_frame = frame
                         self.last_frame_time = time.time()
+                        self.last_frame_received_at = time.perf_counter()
+                        self.frame_condition.notify_all()
 
             try:
                 self.scrcpy_client = scrcpy.Client(device=self.device, max_width=0, bitrate=10000000) if self.max_fps == "auto" else scrcpy.Client(device=self.device, max_width=0, bitrate=10000000, max_fps=self.max_fps)
@@ -249,24 +270,22 @@ class WindowController:
 
     def is_brawl_stars_running(self):
         try:
-            opened_app = self.device.app_current().package.strip()
-            detected_known_package = False
-            for package in KNOWN_BS_PACKAGES:
-                if opened_app == package:
-                    detected_known_package = True
-                    break
-            if detected_known_package:
-                if opened_app != self.BRAWL_STARS_PACKAGE:
-                    general_config = load_toml_as_dict("cfg/general_config.toml")
-                    general_config["brawl_stars_package"] = opened_app
-                    save_dict_as_toml(general_config, "cfg/general_config.toml")
-                    self.BRAWL_STARS_PACKAGE = opened_app
-                    invalidate_toml_cache("cfg/general_config.toml")
-                    print(f"Detected Brawl Stars running under the '{opened_app}' package. Updating configuration to match.")
-            return opened_app == self.BRAWL_STARS_PACKAGE.strip()
+            return self.is_brawl_stars_package(self.device.app_current().package.strip())
         except Exception as e:
             print(f"Error checking if Brawl Stars is running: {e}")
             return False
+
+    def is_brawl_stars_package(self, opened_app):
+        """Is this foreground package Brawl Stars? A known Brawl Stars package other than the configured one
+        becomes the configured one."""
+        if opened_app in KNOWN_BS_PACKAGES and opened_app != self.BRAWL_STARS_PACKAGE:
+            general_config = load_toml_as_dict("cfg/general_config.toml")
+            general_config["brawl_stars_package"] = opened_app
+            save_dict_as_toml(general_config, "cfg/general_config.toml")
+            self.BRAWL_STARS_PACKAGE = opened_app
+            invalidate_toml_cache("cfg/general_config.toml")
+            print(f"Detected Brawl Stars running under the '{opened_app}' package. Updating configuration to match.")
+        return opened_app == self.BRAWL_STARS_PACKAGE.strip()
 
     def screenshot(self):
         frame, frame_time = self.get_latest_frame()

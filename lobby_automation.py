@@ -92,6 +92,9 @@ class LobbyAutomation:
         x, y = load_toml_as_dict("cfg/buttons_config.toml")["brawlers_menu"]
         self.window_controller.click(x, y, already_include_ratio=False)
         sleep_ui(1.25)
+        # The state checker looks at menu screens every half second: the lobby may still be the latest state shortly
+        # after the brawler menu opened.
+        lobby_grace_until = time.time() + 2.0
         print("Automatic brawler selection started for", brawler_search_name)
         for i in range(100):
             if self._should_interrupt(runtime_control, stop_event):
@@ -102,6 +105,9 @@ class LobbyAutomation:
             if current_state == "shop":
                 print("Brawler menu is still opening")
                 sleep_ui(1)
+                continue
+            if current_state == "lobby" and time.time() < lobby_grace_until:
+                sleep_ui(.5)
                 continue
 
             if current_state != "brawler_selection":
