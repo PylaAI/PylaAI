@@ -107,6 +107,8 @@ class WebDataService:
         "state_check": ("float", 3.0),
         "idle": ("float", 3.0),
         "check_if_brawl_stars_crashed": ("float", 5.0),
+        "no_detections_restart": ("float", 300.0),
+        "frozen_screen_restart": ("float", 60.0),
     }
 
     WEBHOOK_FIELDS: dict[str, tuple[str, Any]] = {

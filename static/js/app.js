@@ -186,6 +186,8 @@ const SETTINGS_META = {
         { key: "state_check", label: "State Check", min: 0.1, max: 10, step: 0.1, help: "How often Pyla checks the game state." },
         { key: "idle", label: "Idle Check", min: 0.1, max: 10, step: 0.1, help: "How often idle detection runs." },
         { key: "check_if_brawl_stars_crashed", label: "Crash Check", min: 0.1, max: 10, step: 0.1, help: "How often crash recovery checks run." },
+        { key: "no_detections_restart", label: "Stuck Restart", min: 60, max: 900, step: 10, help: "Restart Brawl Stars when your brawler has not been seen for this many seconds." },
+        { key: "frozen_screen_restart", label: "Frozen Screen Restart", min: 0, max: 300, step: 5, help: "Restart Brawl Stars when the screen stays exactly the same for this many seconds (the game froze, e.g. stuck on a loading screen). 0 = off." },
     ],
     webhook: [
         { key: "discord_id", label: "Discord ID", type: "text", help: "Your discord user ID. Required to use a discord bot or be pinged in webhooks." },

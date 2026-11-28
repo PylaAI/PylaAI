@@ -7,3 +7,5 @@ super = 0.1
 wall_detection = 0.2
 no_detection_proceed = 8
 check_if_brawl_stars_crashed = 5.0
+no_detections_restart = 300.0
+frozen_screen_restart = 60.0

@@ -221,7 +221,14 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.runtime_control = runtime_control
             self.Stage_manager = StageManager(data, self.lobby_automator, self.window_controller, self.playstyle_info, self.get_latest_state, runtime_control=runtime_control)
             self.states_requiring_data = ["lobby"]
-            self.no_detections_action_threshold = 60 * 8
+            from frozen_screen import (FROZEN_SCREEN_RESTART_SECONDS, NO_DETECTIONS_RESTART_SECONDS,
+                                       FrozenScreenWatch, load_threshold)
+            thresholds = load_toml_as_dict("cfg/time_tresholds.toml")
+            # Only the player counts: a match can go minutes without an enemy in view.
+            self.no_detections_action_threshold = load_threshold(thresholds, "no_detections_restart",
+                                                                 NO_DETECTIONS_RESTART_SECONDS)
+            self.frozen_screen_watch = FrozenScreenWatch(load_threshold(thresholds, "frozen_screen_restart",
+                                                                        FROZEN_SCREEN_RESTART_SECONDS))
             self.state = None
             self.stop_event = stop_event
             self.state_lock = threading.Lock()
@@ -268,6 +275,7 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
             self.time_since_checked_if_brawl_stars_crashed = time.time()
             self.Play.time_since_detections["player"] = time.time()
             self.Play.time_since_detections["enemy"] = time.time()
+            self.frozen_screen_watch.reset()
             if not self.window_controller.is_brawl_stars_running():
                 ping_when_stuck = load_toml_as_dict("cfg/webhook_config.toml")["ping_when_stuck"]
                 if ping_when_stuck:
@@ -412,11 +420,13 @@ def pyla_main(discord_bot, queue_data, stop_event=None, runtime_control=None):
                 if state is not None:
                     self.handle_detected_state(state)
             if self.Time_management.no_detections_check():
-                frame_data = self.Play.time_since_detections
-                t_now = time.time()
-                for key, value in frame_data.items():
-                    if t_now - value > self.no_detections_action_threshold:
-                        self.restart_brawl_stars()
+                unseen_for = time.time() - self.Play.time_since_detections["player"]
+                if unseen_for > self.no_detections_action_threshold:
+                    print(f"No player detected for {unseen_for:.0f}s -- restarting Brawl Stars")
+                    self.restart_brawl_stars()
+            if self.frozen_screen_watch.update(frame, time.time()):
+                print(f"Screen unchanged for {self.frozen_screen_watch.limit:.0f}s, Brawl Stars looks frozen -- restarting it")
+                self.restart_brawl_stars()
             if self.Time_management.idle_check():
                 self.lobby_automator.check_for_idle(frame)
 
