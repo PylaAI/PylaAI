@@ -57,3 +57,7 @@ api/licensing_backend.py
 /api/pyla-tg-bot
 /resolution_probe
 cfg/usage_stats.json
+/build_free
+api/usage_stats_server.py
+api/training_matches.py
+api/retention_bot.py
