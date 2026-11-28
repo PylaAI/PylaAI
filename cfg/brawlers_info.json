@@ -981,6 +981,22 @@
         "super_range": 597,
         "super_type": "other_target"
     },
+  "thunderfrogs": {
+    "actual_name": "Thunder Frogs",
+    "safe_range": 341,
+    "attack_range": 554,
+    "super_type": "charge",
+    "super_range": 384,
+    "ignore_walls_for_attacks": true,
+    "ignore_walls_for_supers": true,
+    "hold_attack": 0,
+    "rarity": "Legendary",
+    "speed": 750,
+    "attack_projectile_speed": 3500,
+    "super_projectile_speed": null,
+    "attack_projectile_radius": 0,
+    "super_projectile_radius": null
+  },
   "vince": {
     "attack_projectile_radius": 100,
     "attack_projectile_speed": 4000,
