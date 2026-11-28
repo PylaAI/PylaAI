@@ -16,8 +16,9 @@
   ],
   "height": 384,
   "width": 640,
-  "source": "entities_v8_ignore_n_640/weights/best.pt",
+  "source": "entities_v16_20k_n_640/weights/best.pt (30 epochs from entities_v8_ignore_n_640; v16 native 720p render)",
   "input": "RGB float32 BCHW, centred letterbox (114/255)",
-  "box": "full entity extent; ground circle width, badge/model top through circle/model bottom",
-  "point": "ground position, not box centre"
+  "box": "full entity extent; ground circle width, top of the badge WITHOUT its counters (gems / bounty stars / cubes) or of the model, whichever is higher, through circle/model bottom",
+  "point": "ground position, not box centre",
+  "test": "v16 test split (510 frames): box mAP50-95 0.896 (v8 model 0.778); player 0.975, teammate 0.956, enemy 0.950, teammate_spawnable 0.939, enemy_spawnable 0.869, ignored_spawnable 0.685"
 }

@@ -13,7 +13,8 @@
     "10": "speed",
     "11": "slow",
     "12": "damage",
-    "13": "fragile"
+    "13": "fragile",
+    "14": "gas"
   },
   "width": 832,
   "height": 480,
@@ -23,6 +24,6 @@
     "confidence": "float32 [1,480,832] softmax probability of that class"
   },
   "target": "projected ground occupancy",
-  "training_run": "terrain20k_v8_cont/weights/best.pt",
-  "sha256": "4029b34318b056e577848683f546cddf5b7ab73c3f4a025caa56c722ca837f8a"
+  "training_run": "terrain20k_v16_fine_832/weights/best.pt",
+  "sha256": "3b4abff6df082583d113079bb26c14e9c89802c5726efb3c300a66e696427622"
 }
