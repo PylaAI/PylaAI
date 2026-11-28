@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import usage_stats
 from datetime import date, datetime
 import json
 import logging
@@ -618,7 +619,9 @@ class WebDataService:
     def get_settings_payload(self, section: str) -> dict[str, Any]:
         section = section.lower()
         if section == "general":
-            return self._select_fields(self._load_config("cfg/general_config.toml"), self.GENERAL_FIELDS)
+            payload = self._select_fields(self._load_config("cfg/general_config.toml"), self.GENERAL_FIELDS)
+            payload["usage_stats"] = usage_stats.enabled()  # the server's default until the user picks
+            return payload
         if section == "bot":
             payload = self._select_fields(self._load_config("cfg/bot_config.toml"), self.BOT_FIELDS)
             payload["current_playstyle"] = self._load_config("cfg/bot_config.toml").get("current_playstyle", "default_up.pyla")
@@ -643,6 +646,8 @@ class WebDataService:
         section = section.lower()
         payload = payload or {}
         if section == "general":
+            if "usage_stats" in payload:
+                usage_stats.set_choice(self._deserialize("bool", payload["usage_stats"]))
             config = self._load_config("cfg/general_config.toml")
             self._save_config("cfg/general_config.toml", self._apply_updates(config, self.GENERAL_FIELDS, payload))
             if "play_order" in payload and self.get_settings_payload("general").get("play_order") != "in_order":
@@ -1010,6 +1015,7 @@ class WebDataService:
                 "download_url": DOWNLOAD_URL,
             },
             "announcements": self.get_announcements_safe(),
+            "privacy_prompt": usage_stats.prompt_state(),
             "auth": auth_payload,
             "runtime": self.runtime_manager.get_status(),
             "links": {

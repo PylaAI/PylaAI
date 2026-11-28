@@ -2505,3 +2505,9 @@ body.instance-switching .main-content {
         grid-template-columns: 1fr;
     }
 }
+
+.privacy-modal { max-width: 560px; }
+.privacy-option { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; padding: 14px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: rgba(255,255,255,0.02); cursor: pointer; }
+.privacy-option input { margin-top: 3px; flex: none; width: 18px; height: 18px; }
+.privacy-option > span { display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
+.privacy-option > span > span { color: var(--text-secondary); font-size: 0.9rem; }

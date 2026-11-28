@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import usage_stats
 from datetime import date
 import hmac
 import logging
@@ -181,6 +182,13 @@ def create_app(pyla_main, start_discord_bot=False):
     def announcement_seen():
         payload = request.get_json(silent=True) or {}
         return jsonify(data_service.mark_announcement_seen(payload.get("id")))
+
+    @app.post("/api/privacy-choices")
+    def privacy_choices():
+        payload = request.get_json(silent=True) or {}
+        value = payload.get("usage_stats") in (True, "true", 1, "1")
+        usage_stats.set_choice(value, from_prompt=True)
+        return jsonify({"ok": True, "usage_stats": value})
 
     @app.errorhandler(KeyError)
     @app.errorhandler(FileNotFoundError)

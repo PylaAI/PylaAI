@@ -571,6 +571,8 @@ all_brawlers = get_brawler_list()
 if api_base_url != "localhost":
     update_missing_brawlers_info(all_brawlers)
     check_version()
+    import usage_stats
+    usage_stats.start()  # anonymous daily user count, see usage_stats.py
     if not os.path.isfile('./models/tileDetector.json'):
         update_wall_model_classes()
         if not current_wall_model_is_latest():

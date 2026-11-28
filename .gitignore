@@ -56,3 +56,4 @@ api/licensing_backend.py
 .claude/launch.json
 /api/pyla-tg-bot
 /resolution_probe
+cfg/usage_stats.json

@@ -150,6 +150,7 @@ const SETTINGS_META = {
         { key: "emulator_port", label: "Emulator Port", type: "number", help: "ADB port used for the emulator instance." },
         { key: "brawl_stars_package", label: "Package Name", type: "text", help: "Android package used when restarting Brawl Stars." },
         { key: "auto_load_queue_on_startup", label: "Load Queue On Startup", type: "checkbox", help: "Load the latest saved queue when the web UI starts." },
+        { key: "usage_stats", label: "Anonymous User Count", type: "checkbox", help: "Once a day, sends a random install ID, the Pyla version and the release channel so we can count how many people use Pyla. No player tag, account, key or hardware ID. Turning it off deletes the install ID." },
     ],
     debug: [
         { key: "press_showdown_exit", label: "Press Showdown Exit", type: "checkbox", help: "Press Exit when the player is out of a Showdown match. Turn off for friendly matches: their in-match Exit button looks the same and the bot would leave the match." },
@@ -343,6 +344,7 @@ async function bootstrap(cachedPayload = null) {
     updateChrome();
     renderAll();
     showPendingAnnouncements();
+    showPrivacyPrompt();
     startRuntimePolling();
     startHistoryPolling();
 }
@@ -437,6 +439,51 @@ function getSeenAnnouncementIds() {
     } catch (error) {
         return new Set();
     }
+}
+
+function showPrivacyPrompt() {
+    // First-launch notice about the anonymous user count (on unless the server says otherwise). The answer is kept in
+    // cfg/usage_stats.json, so it is asked once per installation.
+    const prompt = state.bootstrap?.privacy_prompt;
+    if (!prompt || !prompt.show || document.getElementById("privacyPromptModal")) return;
+
+    document.body.insertAdjacentHTML("beforeend", `
+        <div id="privacyPromptModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="privacyPromptTitle" style="z-index: 370;">
+            <section class="modal privacy-modal">
+                <header class="modal-header">
+                    <p class="eyebrow">Privacy</p>
+                    <h3 id="privacyPromptTitle">Help improve Pyla</h3>
+                    <p>Pyla can tell us, anonymously, that one more person uses it. You can change this any time in Settings › General.</p>
+                </header>
+                <label class="privacy-option">
+                    <input id="privacyUsageStats" type="checkbox" ${prompt.usage_stats ? "checked" : ""}>
+                    <span>
+                        <strong>Anonymous user count</strong>
+                        <span>Once a day: a random install ID, the Pyla version and the release channel. It only tells us how many people use Pyla each day, week and month.</span>
+                        <span>Never sent: your player tag, account, license key, Discord or hardware ID.</span>
+                    </span>
+                </label>
+                <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                    <button id="savePrivacyChoicesBtn" class="btn btn-primary" type="button">Save choices</button>
+                </div>
+            </section>
+        </div>
+    `);
+    document.getElementById("savePrivacyChoicesBtn")?.addEventListener("click", async () => {
+        const usage = Boolean(document.getElementById("privacyUsageStats")?.checked);
+        const result = await fetchJSON("/api/privacy-choices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ usage_stats: usage }),
+        }, true);
+        if (!result?.ok) {
+            showToast(result?.message || "Unable to save your choices.", "error");
+            return;
+        }
+        state.bootstrap.privacy_prompt.show = false;
+        if (state.bootstrap.settings?.general) state.bootstrap.settings.general.usage_stats = result.usage_stats;
+        document.getElementById("privacyPromptModal")?.remove();
+    });
 }
 
 function showPendingAnnouncements() {
